@@ -36,11 +36,13 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
         print("Gagal load data.")
         return
 
+    # RESET INDEX BIAR NUMERIK (INI PENTING)
+    data = data.reset_index(drop=True)
+
     print("Calculating measures...")
-    # Measures minimal yang pasti ada
     data["range"] = data["high"] - data["low"]
     data["body"] = (data["close"] - data["open"]).abs()
-    data["atr"] = data["range"].rolling(14, min_periods=1).mean()
+    data["atr"] = data["range"].rolling(ATR_PERIOD, min_periods=1).mean()
 
     print("Detecting events...")
     impulse_mask = detect_impulse(data, data["atr"])
@@ -74,9 +76,7 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
         "orderflow_shift": detect_orderflow_shift(data),
     }
 
-    micro_summary = {
-        k: int(v.sum()) for k, v in micro_flags.items()
-    }
+    micro_summary = {k: int(v.sum()) for k, v in micro_flags.items()}
 
     print("Building transition matrix...")
     combined_sequence = generate_state_sequence(
@@ -88,14 +88,11 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
     transition_summary_data = transition_summary(transition_matrix)
 
     print("Calculating Conditional Expectancy...")
-    # Contoh kondisi dasar berbasis behavior
+
     condition_dict = {
-        "impulse": lambda r: r.name < len(event_sequence)
-                             and event_sequence[r.name] == "impulse",
-        "retracement": lambda r: r.name < len(event_sequence)
-                                 and event_sequence[r.name] == "retracement",
-        "consolidation": lambda r: r.name < len(event_sequence)
-                                   and event_sequence[r.name] == "consolidation",
+        "impulse": lambda r: event_sequence[r.name] == "impulse",
+        "retracement": lambda r: event_sequence[r.name] == "retracement",
+        "consolidation": lambda r: event_sequence[r.name] == "consolidation",
     }
 
     ce_table = generate_ce_table(
@@ -136,7 +133,6 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
 if __name__ == "__main__":
     print("Quant Behavior Backtest Engine Running...")
 
-    # Path ke data CSV (ganti sesuai lokasi data kamu)
     DATA_PATH = "xauusd_m1_cleaned.csv"
 
     run_quant_backtest(
@@ -144,5 +140,4 @@ if __name__ == "__main__":
         timeframe=DEFAULT_TIMEFRAME,
         forward_points=FORWARD_POINTS
     )
-
-
+    
