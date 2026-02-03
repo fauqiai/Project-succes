@@ -137,7 +137,7 @@ if __name__ == "__main__":
     print("Quant Behavior Backtest Engine Running...")
 
     # Path ke data CSV (ganti sesuai lokasi data kamu)
-    DATA_PATH = "data.csv"
+    DATA_PATH = "xauusd_m1_cleaned.csv"
 
     run_quant_backtest(
         path_to_csv=DATA_PATH,
