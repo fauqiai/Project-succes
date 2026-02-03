@@ -134,5 +134,15 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
 # ============================================================
 
 if __name__ == "__main__":
-    print("Quant Behavior Backtest Engine Ready.")
+    print("Quant Behavior Backtest Engine Running...")
+
+    # Path ke data CSV (ganti sesuai lokasi data kamu)
+    DATA_PATH = "data.csv"
+
+    run_quant_backtest(
+        path_to_csv=DATA_PATH,
+        timeframe=DEFAULT_TIMEFRAME,
+        forward_points=FORWARD_POINTS
+    )
+
 
