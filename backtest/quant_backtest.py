@@ -78,17 +78,34 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
 
     micro_summary = {k: int(v.sum()) for k, v in micro_flags.items()}
 
-    print("Building transition matrix...")
+    # ============================================================
+    # 🔥 FIX ADA DI SINI (TRANSITION PIPELINE)
+    # ============================================================
+
+    print("Building behavior transitions...")
+
     combined_sequence = generate_state_sequence(
         events=event_sequence,
         regimes=regime_sequence
     )
 
-    transition_matrix = build_behavior_transitions(
-    sequence=combined_sequence,
-    data=data
+    # STEP 1 — RAW BEHAVIOR TRANSITIONS
+    transitions = build_behavior_transitions(
+        sequence=combined_sequence,
+        data=data,
+        forward_points=forward_points
     )
+
+    # STEP 2 — HITUNG STATS (INI YANG DULU KELEWAT)
+    transition_stats = compute_transition_stats(transitions)
+
+    # STEP 3 — FLOW MATRIX
+    transition_matrix = build_flow_matrix(transition_stats)
+
+    # STEP 4 — SUMMARY (SEKARANG AMAN)
     transition_summary_data = transition_summary(transition_matrix)
+
+    # ============================================================
 
     print("Calculating Conditional Expectancy...")
 
@@ -143,4 +160,3 @@ if __name__ == "__main__":
         timeframe=DEFAULT_TIMEFRAME,
         forward_points=FORWARD_POINTS
     )
-    
