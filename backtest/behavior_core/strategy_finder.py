@@ -1,6 +1,6 @@
 """
 strategy_finder.py
-Behavior-Based Strategy Finder (FINAL)
+Behavior-Based Strategy Finder (FINAL IMPORT SAFE)
 
 Upgrades:
 - Uses MFE / MAE from expectancy engine
@@ -13,7 +13,8 @@ ASCII safe.
 import pandas as pd
 import numpy as np
 
-from behavior_core.expectancy import compute_excursions
+# ✅ IMPORT FIX (VERY IMPORTANT)
+from backtest.behavior_core.expectancy import compute_excursions
 
 
 # ============================================================
@@ -97,7 +98,7 @@ def evaluate_strategies(data, strategy_rules, forward_points=20):
         if stats is None:
             continue
 
-        # kill low sample strategies (VERY IMPORTANT)
+        # kill low sample strategies
         if stats["samples"] < 30:
             continue
 
@@ -107,7 +108,7 @@ def evaluate_strategies(data, strategy_rules, forward_points=20):
 
 
 # ============================================================
-# 5. SMART RANKING (NOT WINRATE)
+# 5. SMART RANKING
 # ============================================================
 
 def rank_strategies(strategy_results):
@@ -137,7 +138,6 @@ def find_best_strategies(data, forward_points=20):
 
     ranked = rank_strategies(evaluated)
 
-    # Only keep positive EV
     best = [(name, stats) for name, stats in ranked if stats["EV"] > 0]
 
     return best
