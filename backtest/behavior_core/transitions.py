@@ -1,22 +1,27 @@
 """
 transitions.py
---------------
-Module untuk membangun transition matrix pada Quant Behavior.
-Semua komentar menggunakan ASCII agar aman disimpan di Notepad Windows.
+Behavior-Aware Transition Engine (FINAL)
+
+Upgrades:
+- Transition probability
+- Avg move after transition
+- MFE / MAE tracking
+- Opportunity vs risk insight
+ASCII safe.
 """
 
 import pandas as pd
 import numpy as np
 
+# ✅ IMPORT FIX
+from backtest.behavior_core.expectancy import compute_excursions
+
+
 # ============================================================
-# 1. TRANSITION COUNT BUILDER
+# 1. TRANSITION COUNT
 # ============================================================
 
 def count_transitions(sequence):
-    """
-    Menghitung jumlah perpindahan antar state.
-    Output: dict {(from, to): count}
-    """
 
     counts = {}
 
@@ -31,61 +36,10 @@ def count_transitions(sequence):
 
 
 # ============================================================
-# 2. TRANSITION MATRIX BUILDER
-# ============================================================
-
-def build_transition_matrix(sequence):
-    """
-    Membangun transition matrix dari sequence state.
-    Output: dict of dict
-    matrix[state_from][state_to] = probability (belum dinormalisasi)
-    """
-
-    counts = count_transitions(sequence)
-    matrix = {}
-
-    for (frm, to), cnt in counts.items():
-        if frm not in matrix:
-            matrix[frm] = {}
-        matrix[frm][to] = cnt
-
-    return normalize_matrix(matrix)
-
-
-# ============================================================
-# 3. NORMALIZATION
-# ============================================================
-
-def normalize_matrix(matrix):
-    """
-    Menormalisasi matrix count menjadi probabilitas.
-    """
-
-    norm_matrix = {}
-
-    for frm, targets in matrix.items():
-        total = sum(targets.values())
-        norm_matrix[frm] = {}
-
-        for to, cnt in targets.items():
-            if total > 0:
-                norm_matrix[frm][to] = cnt / total
-            else:
-                norm_matrix[frm][to] = 0.0
-
-    return norm_matrix
-
-
-# ============================================================
-# 4. STATE SEQUENCE GENERATOR
+# 2. STATE SEQUENCE
 # ============================================================
 
 def generate_state_sequence(events=None, regimes=None):
-    """
-    Menggabungkan event dan regime menjadi satu state.
-    Contoh:
-    impulse + trend -> impulse_trend
-    """
 
     if events is None and regimes is None:
         return []
@@ -96,33 +50,132 @@ def generate_state_sequence(events=None, regimes=None):
     if regimes is None:
         return list(events)
 
-    sequence = []
     size = min(len(events), len(regimes))
 
-    for i in range(size):
-        sequence.append(f"{events[i]}_{regimes[i]}")
-
-    return sequence
+    return [
+        f"{events[i]}_{regimes[i]}"
+        for i in range(size)
+    ]
 
 
 # ============================================================
-# 5. TRANSITION SUMMARY
+# 3. BEHAVIOR TRANSITION BUILDER
 # ============================================================
 
-def transition_summary(matrix):
-    """
-    Ringkasan transition matrix.
-    Output: dict
-    """
+def build_behavior_transitions(
+        sequence,
+        data,
+        forward_points=20):
+
+    mfe, mae = compute_excursions(data, forward_points)
+    closes = data["close"]
+
+    transitions = {}
+
+    for i in range(len(sequence) - 1):
+
+        frm = sequence[i]
+        to = sequence[i + 1]
+
+        key = (frm, to)
+
+        if key not in transitions:
+            transitions[key] = {
+                "count": 0,
+                "moves": [],
+                "mfe": [],
+                "mae": []
+            }
+
+        entry = closes.iloc[i]
+        future = closes.iloc[min(i + forward_points, len(closes)-1)]
+
+        move = (future - entry) / entry
+
+        transitions[key]["count"] += 1
+        transitions[key]["moves"].append(move)
+        transitions[key]["mfe"].append(mfe.iloc[i])
+        transitions[key]["mae"].append(mae.iloc[i])
+
+    return transitions
+
+
+# ============================================================
+# 4. NORMALIZE + STATS
+# ============================================================
+
+def compute_transition_stats(transitions):
+
+    stats = {}
+
+    total_from = {}
+
+    # count totals
+    for (frm, _), data in transitions.items():
+        total_from[frm] = total_from.get(frm, 0) + data["count"]
+
+    for key, data in transitions.items():
+
+        frm, to = key
+        probability = data["count"] / total_from[frm]
+
+        moves = np.array(data["moves"])
+        mfe = np.array(data["mfe"])
+        mae = np.array(data["mae"])
+
+        stats[key] = {
+
+            "probability": probability,
+            "samples": data["count"],
+
+            "avg_move": moves.mean(),
+            "median_move": np.median(moves),
+
+            "max_move": moves.max(),
+            "min_move": moves.min(),
+
+            "avg_mfe": mfe.mean(),
+            "avg_mae": mae.mean()
+        }
+
+    return stats
+
+
+# ============================================================
+# 5. FLOW MATRIX (SMART VIEW)
+# ============================================================
+
+def build_flow_matrix(transition_stats):
+
+    flow = {}
+
+    for (frm, to), stats in transition_stats.items():
+
+        if frm not in flow:
+            flow[frm] = {}
+
+        flow[frm][to] = stats
+
+    return flow
+
+
+# ============================================================
+# 6. TRANSITION SUMMARY
+# ============================================================
+
+def transition_summary(flow_matrix):
 
     summary = {}
 
-    for frm, targets in matrix.items():
-        summary[frm] = sorted(
+    for frm, targets in flow_matrix.items():
+
+        ranked = sorted(
             targets.items(),
-            key=lambda x: x[1],
+            key=lambda x: x[1]["probability"],
             reverse=True
         )
+
+        summary[frm] = ranked
 
     return summary
 
@@ -132,27 +185,44 @@ def transition_summary(matrix):
 # ============================================================
 
 if __name__ == "__main__":
-    # Simple synthetic sequence test
-    events = [
-        "impulse", "retracement", "consolidation",
-        "impulse", "retracement", "impulse",
-        "consolidation", "consolidation", "impulse"
-    ]
 
-    regimes = [
-        "trend", "trend", "range",
-        "trend", "range", "trend",
-        "range", "range", "trend"
-    ]
+    np.random.seed(42)
+    size = 300
 
-    state_sequence = generate_state_sequence(events, regimes)
+    price = np.cumsum(np.random.randn(size)) + 100
 
-    matrix = build_transition_matrix(state_sequence)
-    summary = transition_summary(matrix)
+    df = pd.DataFrame({
+        "open": price,
+        "high": price + np.random.rand(size),
+        "low": price - np.random.rand(size),
+        "close": price
+    })
 
-    print("State sequence:", state_sequence)
-    print("Transition matrix:", matrix)
-    print("Transition summary:", summary)
+    events = np.random.choice(
+        ["impulse", "retracement", "consolidation"],
+        size
+    )
 
-    print("transitions.py self-test OK")
+    regimes = np.random.choice(
+        ["trend", "range"],
+        size
+    )
 
+    sequence = generate_state_sequence(events, regimes)
+
+    transitions = build_behavior_transitions(
+        sequence,
+        df,
+        forward_points=20
+    )
+
+    stats = compute_transition_stats(transitions)
+    flow = build_flow_matrix(stats)
+    summary = transition_summary(flow)
+
+    print("\nFLOW SUMMARY:\n")
+
+    for state, targets in summary.items():
+        print(state, "->", targets[:2])
+
+    print("\nBehavior Transition Engine OK")
