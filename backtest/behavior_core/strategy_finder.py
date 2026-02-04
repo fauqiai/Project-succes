@@ -183,12 +183,21 @@ if __name__ == "__main__":
         "close": price + np.random.randn(size) * 0.1,
     })
 
+    # debug: lihat hasil evaluate_strategies mentah (raw stats per strategy)
+    rules = build_strategy_rules()
+    evaluated = evaluate_strategies(df, rules, forward_points=20)
+    print("\nRAW evaluated (per strategy):\n")
+    for k, v in evaluated.items():
+        print(k, "->", v)
+    
+    # show ranked best + final summary
     best = find_best_strategies(df, forward_points=20)
+    print("\nBEST (ranked positive EV):\n", best)
+
     summary = strategy_summary(best)
-
-    print("\nBest strategies:\n")
-
+    print("\nSummary:")
     for row in summary:
         print(row)
 
     print("\nStrategy Finder Behavior Engine OK")
+
