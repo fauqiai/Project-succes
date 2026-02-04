@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 
 # ✅ IMPORT FIX
-from backtest.behavior_core.expectancy import compute_excursions
+from behavior_core.expectancy import compute_excursions
 
 
 # ============================================================
