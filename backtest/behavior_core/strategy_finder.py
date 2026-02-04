@@ -1,32 +1,35 @@
 """
 strategy_finder.py
-------------------
-Module untuk menemukan strategi terbaik berdasarkan Quant Behavior.
-Semua komentar menggunakan ASCII agar aman untuk Notepad Windows.
+Behavior-Based Strategy Finder (FINAL)
+
+Upgrades:
+- Uses MFE / MAE from expectancy engine
+- Calculates TRUE Expected Value
+- Avoids winrate trap
+- Scores real opportunity vs risk
+ASCII safe.
 """
 
 import pandas as pd
 import numpy as np
+
+from behavior_core.expectancy import compute_excursions
+
 
 # ============================================================
 # 1. STRATEGY RULE BUILDER
 # ============================================================
 
 def build_strategy_rules():
-    """
-    Mengembalikan dictionary:
-    { strategy_name: rule_function }
-    """
 
     rules = {}
 
-    # Simple behavior based rules (baseline)
     rules["bullish_candle"] = lambda r: r["close"] > r["open"]
 
     rules["bearish_candle"] = lambda r: r["close"] < r["open"]
 
     rules["large_range"] = lambda r: (r["high"] - r["low"]) > (
-        (r["high"] - r["low"]).mean() if hasattr(r, "mean") else 0
+        (r["high"] - r["low"]) * 0.7
     )
 
     rules["small_body"] = lambda r: abs(r["close"] - r["open"]) < (
@@ -37,70 +40,81 @@ def build_strategy_rules():
 
 
 # ============================================================
-# 2. STRATEGY TESTING ENGINE
+# 2. MASK BUILDER
 # ============================================================
 
-def test_strategy(data, rule_fn, forward_points=10):
-    """
-    Menguji rule dan mengembalikan:
-    mask, outcomes
-    """
-
-    close = data["close"]
-    future_close = close.shift(-forward_points)
-    outcomes = (future_close - close) / close
-
-    mask = data.apply(rule_fn, axis=1).fillna(False)
-
-    return mask, outcomes.fillna(0.0)
+def build_mask(data, rule_fn):
+    return data.apply(rule_fn, axis=1).fillna(False)
 
 
 # ============================================================
-# 3. STRATEGY EXPECTANCY CALCULATION
+# 3. TRUE EV CALCULATION (CORE)
 # ============================================================
 
-def calculate_strategy_expectancy(data, strategy_rules, forward_points=10):
-    """
-    Output:
-    dict[strategy_name] -> metrics
-    """
+def calculate_true_ev(mfe, mae, mask):
+
+    mfe_f = mfe[mask]
+    mae_f = mae[mask]
+
+    samples = len(mfe_f)
+
+    if samples == 0:
+        return None
+
+    avg_up = mfe_f.mean()
+    avg_down = abs(mae_f.mean())
+
+    winrate = (mfe_f > abs(mae_f)).mean()
+
+    # TRUE EXPECTED VALUE
+    ev = (avg_up * winrate) - (avg_down * (1 - winrate))
+
+    return {
+        "EV": ev,
+        "avg_up_move": avg_up,
+        "avg_down_move": avg_down,
+        "winrate": winrate,
+        "samples": samples
+    }
+
+
+# ============================================================
+# 4. STRATEGY EVALUATION ENGINE
+# ============================================================
+
+def evaluate_strategies(data, strategy_rules, forward_points=20):
+
+    mfe, mae = compute_excursions(data, forward_points)
 
     results = {}
 
     for name, rule_fn in strategy_rules.items():
-        mask, outcomes = test_strategy(data, rule_fn, forward_points)
 
-        samples = int(mask.sum())
-        if samples == 0:
+        mask = build_mask(data, rule_fn)
+
+        stats = calculate_true_ev(mfe, mae, mask)
+
+        if stats is None:
             continue
 
-        filtered = outcomes[mask]
+        # kill low sample strategies (VERY IMPORTANT)
+        if stats["samples"] < 30:
+            continue
 
-        ce = filtered.mean()
-        winrate = (filtered > 0).mean()
-
-        results[name] = {
-            "CE": ce,
-            "winrate": winrate,
-            "samples": samples
-        }
+        results[name] = stats
 
     return results
 
 
 # ============================================================
-# 4. STRATEGY RANKING
+# 5. SMART RANKING (NOT WINRATE)
 # ============================================================
 
-def rank_strategies(expectancy_results):
-    """
-    Mengurutkan strategi berdasarkan CE tertinggi.
-    Output: list of tuples
-    """
+def rank_strategies(strategy_results):
 
     ranked = sorted(
-        expectancy_results.items(),
-        key=lambda x: x[1]["CE"],
+        strategy_results.items(),
+        key=lambda x: x[1]["EV"],
         reverse=True
     )
 
@@ -108,44 +122,42 @@ def rank_strategies(expectancy_results):
 
 
 # ============================================================
-# 5. BEST STRATEGY SELECTOR
+# 6. BEST STRATEGY SELECTOR
 # ============================================================
 
-def find_best_strategies(data, forward_points=10):
-    """
-    Pipeline utama strategy finder.
-    """
+def find_best_strategies(data, forward_points=20):
 
     rules = build_strategy_rules()
-    expectancy = calculate_strategy_expectancy(
-        data, rules, forward_points
+
+    evaluated = evaluate_strategies(
+        data,
+        rules,
+        forward_points
     )
 
-    ranked = rank_strategies(expectancy)
+    ranked = rank_strategies(evaluated)
 
-    best = []
-    for name, stats in ranked:
-        if stats["CE"] > 0:
-            best.append((name, stats))
+    # Only keep positive EV
+    best = [(name, stats) for name, stats in ranked if stats["EV"] > 0]
 
     return best
 
 
 # ============================================================
-# 6. STRATEGY SUMMARY OUTPUT
+# 7. STRATEGY SUMMARY
 # ============================================================
 
 def strategy_summary(best_strategies):
-    """
-    Output: list of dict
-    """
 
     summary = []
 
     for name, stats in best_strategies:
+
         summary.append({
             "strategy": name,
-            "CE": stats["CE"],
+            "EV": stats["EV"],
+            "avg_up_move": stats["avg_up_move"],
+            "avg_down_move": stats["avg_down_move"],
             "winrate": stats["winrate"],
             "samples": stats["samples"]
         })
@@ -158,8 +170,9 @@ def strategy_summary(best_strategies):
 # ============================================================
 
 if __name__ == "__main__":
+
     np.random.seed(42)
-    size = 200
+    size = 300
 
     price = np.cumsum(np.random.randn(size)) + 100
 
@@ -170,12 +183,12 @@ if __name__ == "__main__":
         "close": price + np.random.randn(size) * 0.1,
     })
 
-    best = find_best_strategies(df, forward_points=5)
+    best = find_best_strategies(df, forward_points=20)
     summary = strategy_summary(best)
 
-    print("Best strategies:")
+    print("\nBest strategies:\n")
+
     for row in summary:
         print(row)
 
-    print("strategy_finder.py self-test OK")
-
+    print("\nStrategy Finder Behavior Engine OK")
