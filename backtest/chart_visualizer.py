@@ -1,29 +1,28 @@
 """
 chart_visualizer.py
 ------------------
-Module untuk visualisasi hasil Quant Behavior langsung di chart.
+Quant chart visualizer with trading entries.
 
-Fungsi:
-- Plot candlestick sederhana
-- Overlay event
-- Overlay microstructure
-- Overlay regime
+Features:
+- Candlestick chart
+- BUY / SELL arrows
+- Stop Loss line
+- Take Profit line
 """
 
-import pandas as pd
 import matplotlib.pyplot as plt
 
 from data_loader import load_and_prepare
-from behavior_core.measures import *
 from behavior_core.event_detection import *
 from behavior_core.regime_detection import *
 from behavior_core.microstructure import *
 
+from entry_engine import generate_entry_signals
 from config import *
 
 
 # ============================================================
-# 1. PREPARE DATA
+# PREPARE DATA
 # ============================================================
 
 def prepare_visual_data(path_to_csv, timeframe=None):
@@ -42,31 +41,7 @@ def prepare_visual_data(path_to_csv, timeframe=None):
 
 
 # ============================================================
-# 2. COMPUTE SIGNALS
-# ============================================================
-
-def compute_behavior_signals(data):
-
-    signals = {}
-
-    signals["impulse"] = detect_impulse(data, data["atr"])
-    signals["retracement"] = detect_retracement(data)
-    signals["consolidation"] = detect_consolidation(data)
-
-    signals["sweep"] = detect_sweep(data)
-    signals["imbalance"] = detect_imbalance(data)
-    signals["fvg"] = detect_fvg(data)
-    signals["displacement"] = detect_displacement(data)
-    signals["sfp"] = detect_sfp(data)
-
-    # VERY IMPORTANT -> convert ke list biar anti iloc error
-    signals["regime"] = list(classify_regime(data))
-
-    return signals
-
-
-# ============================================================
-# 3. SIMPLE CANDLE PLOT
+# SIMPLE CANDLE PLOT
 # ============================================================
 
 def plot_candles(data, max_bars=300):
@@ -77,102 +52,94 @@ def plot_candles(data, max_bars=300):
 
     for i in range(len(data)):
 
-        open_price = data["open"].iloc[i]
-        close_price = data["close"].iloc[i]
-        high_price = data["high"].iloc[i]
-        low_price = data["low"].iloc[i]
+        o = data["open"].iloc[i]
+        c = data["close"].iloc[i]
+        h = data["high"].iloc[i]
+        l = data["low"].iloc[i]
 
-        color = "green" if close_price >= open_price else "red"
+        color = "green" if c >= o else "red"
 
         # wick
-        ax.plot([i, i], [low_price, high_price])
+        ax.plot([i, i], [l, h], linewidth=1)
 
         # body
-        ax.plot([i, i], [open_price, close_price], linewidth=4)
+        ax.plot([i, i], [o, c], linewidth=4, color=color)
 
     return fig, ax, data
 
 
 # ============================================================
-# 4. OVERLAY EVENTS
+# DRAW TRADING SIGNALS
 # ============================================================
 
-def overlay_events(ax, data, signals):
+def overlay_entries(ax, data, signals):
 
-    for i in range(len(data)):
+    start_index = len(data)
 
-        if signals["impulse"].iloc[-len(data)+i]:
-            ax.scatter(i, data["high"].iloc[i], marker="^", s=60)
+    for signal in signals:
 
-        elif signals["retracement"].iloc[-len(data)+i]:
-            ax.scatter(i, data["low"].iloc[i], marker="v", s=60)
+        i = signal["index"]
 
-        elif signals["consolidation"].iloc[-len(data)+i]:
-            ax.scatter(i, data["close"].iloc[i], marker="o", s=30)
+        # hanya tampilkan yang masuk area chart
+        if i < (len(signals) - start_index):
+            continue
 
+        chart_i = i - (len(signals) - start_index)
 
-# ============================================================
-# 5. OVERLAY MICROSTRUCTURE
-# ============================================================
+        if chart_i < 0 or chart_i >= len(data):
+            continue
 
-def overlay_microstructure(ax, data, signals):
+        entry = signal["entry"]
+        sl = signal["sl"]
+        tp = signal["tp"]
 
-    for i in range(len(data)):
+        if signal["type"] == "BUY":
 
-        if signals["sweep"].iloc[-len(data)+i]:
-            ax.scatter(i, data["high"].iloc[i], marker="x", s=80)
+            # BUY arrow
+            ax.scatter(chart_i, entry, marker="^", s=120)
 
-        if signals["displacement"].iloc[-len(data)+i]:
-            ax.scatter(i, data["close"].iloc[i], marker="s", s=40)
+        else:
 
-        if signals["sfp"].iloc[-len(data)+i]:
-            ax.scatter(i, data["low"].iloc[i], marker="*", s=120)
+            # SELL arrow
+            ax.scatter(chart_i, entry, marker="v", s=120)
 
+        # SL line
+        ax.hlines(sl,
+                  chart_i-3,
+                  chart_i+3,
+                  linestyles="dashed")
 
-# ============================================================
-# 6. OVERLAY REGIME (FIX TOTAL)
-# ============================================================
-
-def overlay_regime(ax, data, signals):
-
-    regimes = list(signals["regime"])[-len(data):]
-
-    for i in range(len(data)):
-
-        regime = regimes[i]
-
-        if regime == "trend":
-            ax.axvspan(i-0.5, i+0.5, alpha=0.05)
-
-        elif regime == "range":
-            ax.axvspan(i-0.5, i+0.5, alpha=0.02)
+        # TP line
+        ax.hlines(tp,
+                  chart_i-3,
+                  chart_i+3,
+                  linestyles="solid")
 
 
 # ============================================================
-# 7. FULL PIPELINE
+# FULL PIPELINE
 # ============================================================
 
 def run_chart_visualizer(path_to_csv,
                          timeframe=None,
                          max_bars=300):
 
-    print("Loading data for visualization...")
+    print("Loading data...")
     data = prepare_visual_data(path_to_csv, timeframe)
 
     if data is None:
         return
 
-    print("Computing behavior signals...")
-    signals = compute_behavior_signals(data)
+    print("Generating entries...")
+    signals = generate_entry_signals(data)
 
     print("Plotting chart...")
     fig, ax, data = plot_candles(data, max_bars)
 
-    overlay_events(ax, data, signals)
-    overlay_microstructure(ax, data, signals)
-    overlay_regime(ax, data, signals)
+    overlay_entries(ax, data, signals)
 
-    plt.title("Quant Behavior Chart")
+    plt.title("Quant Behavior Trading Chart")
+    plt.grid(alpha=0.2)
     plt.show()
 
 
