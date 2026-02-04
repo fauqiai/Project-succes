@@ -1,19 +1,24 @@
 """
 chart_visualizer.py
 ------------------
-Module untuk visualisasi hasil Quant Behavior ke dalam chart.
-ASCII safe.
+Module untuk visualisasi hasil Quant Behavior langsung di chart.
+
+Fungsi:
+- Plot candlestick sederhana
+- Overlay event
+- Overlay microstructure
+- Overlay regime
 """
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 
-from behavior_core.event_detection import *
-from behavior_core.microstructure import *
-from behavior_core.regime_detection import *
-
 from data_loader import load_and_prepare
+from behavior_core.measures import *
+from behavior_core.event_detection import *
+from behavior_core.regime_detection import *
+from behavior_core.microstructure import *
+
 from config import *
 
 
@@ -31,7 +36,7 @@ def prepare_visual_data(path_to_csv, timeframe=None):
 
     data["range"] = data["high"] - data["low"]
     data["body"] = (data["close"] - data["open"]).abs()
-    data["atr"] = data["range"].rolling(14, min_periods=1).mean()
+    data["atr"] = data["range"].rolling(ATR_PERIOD, min_periods=1).mean()
 
     return data
 
@@ -44,57 +49,46 @@ def compute_behavior_signals(data):
 
     signals = {}
 
-    # Events
     signals["impulse"] = detect_impulse(data, data["atr"])
     signals["retracement"] = detect_retracement(data)
     signals["consolidation"] = detect_consolidation(data)
 
-    # Microstructure
     signals["sweep"] = detect_sweep(data)
     signals["imbalance"] = detect_imbalance(data)
     signals["fvg"] = detect_fvg(data)
     signals["displacement"] = detect_displacement(data)
     signals["sfp"] = detect_sfp(data)
 
-    # Regime
-    signals["regime"] = classify_regime(data)
+    # VERY IMPORTANT -> convert ke list biar anti iloc error
+    signals["regime"] = list(classify_regime(data))
 
     return signals
 
 
 # ============================================================
-# 3. CANDLE PLOT
+# 3. SIMPLE CANDLE PLOT
 # ============================================================
 
 def plot_candles(data, max_bars=300):
 
-    data = data.tail(max_bars)
+    data = data.tail(max_bars).reset_index(drop=True)
 
-    fig, ax = plt.subplots(figsize=(14,7))
+    fig, ax = plt.subplots(figsize=(16,7))
 
     for i in range(len(data)):
 
         open_price = data["open"].iloc[i]
         close_price = data["close"].iloc[i]
-        high = data["high"].iloc[i]
-        low = data["low"].iloc[i]
+        high_price = data["high"].iloc[i]
+        low_price = data["low"].iloc[i]
 
         color = "green" if close_price >= open_price else "red"
 
         # wick
-        ax.plot([i, i], [low, high], linewidth=1)
+        ax.plot([i, i], [low_price, high_price])
 
         # body
-        ax.add_patch(
-            plt.Rectangle(
-                (i - 0.3, min(open_price, close_price)),
-                0.6,
-                abs(close_price - open_price)
-            )
-        ).set_color(color)
-
-    ax.set_title("Quant Behavior Chart")
-    ax.grid(alpha=0.2)
+        ax.plot([i, i], [open_price, close_price], linewidth=4)
 
     return fig, ax, data
 
@@ -114,7 +108,7 @@ def overlay_events(ax, data, signals):
             ax.scatter(i, data["low"].iloc[i], marker="v", s=60)
 
         elif signals["consolidation"].iloc[-len(data)+i]:
-            ax.scatter(i, data["close"].iloc[i], marker="o", s=20)
+            ax.scatter(i, data["close"].iloc[i], marker="o", s=30)
 
 
 # ============================================================
@@ -136,16 +130,16 @@ def overlay_microstructure(ax, data, signals):
 
 
 # ============================================================
-# 6. OVERLAY REGIME
+# 6. OVERLAY REGIME (FIX TOTAL)
 # ============================================================
 
 def overlay_regime(ax, data, signals):
 
-    regimes = signals["regime"][-len(data):]
+    regimes = list(signals["regime"])[-len(data):]
 
     for i in range(len(data)):
 
-        regime = regimes.iloc[i]
+        regime = regimes[i]
 
         if regime == "trend":
             ax.axvspan(i-0.5, i+0.5, alpha=0.05)
@@ -178,16 +172,15 @@ def run_chart_visualizer(path_to_csv,
     overlay_microstructure(ax, data, signals)
     overlay_regime(ax, data, signals)
 
+    plt.title("Quant Behavior Chart")
     plt.show()
 
 
 # ============================================================
-# 8. MAIN
+# MAIN
 # ============================================================
 
 if __name__ == "__main__":
-
-    print("Chart Visualizer Running...")
 
     DATA_PATH = "xauusd_m1_cleaned.csv"
 
@@ -196,4 +189,3 @@ if __name__ == "__main__":
         timeframe=DEFAULT_TIMEFRAME,
         max_bars=300
     )
-
