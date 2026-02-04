@@ -84,7 +84,10 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
         regimes=regime_sequence
     )
 
-    transition_matrix = build_transition_matrix(combined_sequence)
+    transition_matrix = build_behavior_transitions(
+    sequence=combined_sequence,
+    data=data
+    )
     transition_summary_data = transition_summary(transition_matrix)
 
     print("Calculating Conditional Expectancy...")
