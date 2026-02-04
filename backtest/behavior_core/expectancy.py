@@ -1,15 +1,15 @@
 """
 expectancy.py
--------------
-Behavior-based Expectancy Engine.
+Behavior-based Expectancy Engine (FINAL STABLE)
 
-Upgrade:
-- Adds MFE (Max Favorable Excursion)
-- Adds MAE (Max Adverse Excursion)
-- Adds distribution metrics
-- Adds behavior-driven SL/TP suggestion
+Features:
+- Forward Conditional Expectancy (legacy safe)
+- MFE / MAE excursion engine
+- Behavior expectancy
+- TP/SL suggestion
+- Distribution-ready stats
 
-ASCII safe for Windows Notepad.
+ASCII safe.
 """
 
 import pandas as pd
@@ -17,7 +17,7 @@ import numpy as np
 
 
 # ============================================================
-# 1. CONDITION FILTERING (UNCHANGED)
+# 1. CONDITION FILTERING
 # ============================================================
 
 def filter_conditions(data, condition_fn):
@@ -26,10 +26,10 @@ def filter_conditions(data, condition_fn):
 
 
 # ============================================================
-# 2. FORWARD RETURN (LEGACY - KEEP)
+# 2. FORWARD RETURN (LEGACY)
 # ============================================================
 
-def compute_outcomes(data, forward_points=5):
+def compute_outcomes(data, forward_points=20):
 
     close = data["close"]
     future_close = close.shift(-forward_points)
@@ -39,19 +39,27 @@ def compute_outcomes(data, forward_points=5):
 
 
 # ============================================================
-# 3. NEW CORE: MFE / MAE ENGINE
+# 3. CONDITIONAL EXPECTANCY (LEGACY - MUST EXIST)
+# ============================================================
+
+def calculate_expectancy(conditions, outcomes):
+
+    if len(conditions) == 0:
+        return 0.0
+
+    filtered = outcomes[conditions]
+
+    if len(filtered) == 0:
+        return 0.0
+
+    return filtered.mean()
+
+
+# ============================================================
+# 4. MFE / MAE ENGINE
 # ============================================================
 
 def compute_excursions(data, forward_points=20):
-    """
-    Calculates:
-    - MFE: max favorable move after entry
-    - MAE: max adverse move after entry
-
-    Returns:
-        mfe_series
-        mae_series
-    """
 
     highs = data["high"].values
     lows = data["low"].values
@@ -81,13 +89,10 @@ def compute_excursions(data, forward_points=20):
 
 
 # ============================================================
-# 4. EXCURSION STATISTICS
+# 5. EXCURSION STATISTICS
 # ============================================================
 
 def excursion_statistics(mfe, mae, mask):
-    """
-    Generates institutional-grade behavior stats.
-    """
 
     mfe_f = mfe[mask]
     mae_f = mae[mask]
@@ -97,25 +102,24 @@ def excursion_statistics(mfe, mae, mask):
 
     stats = {
 
-        # Central tendency
         "avg_mfe": mfe_f.mean(),
         "median_mfe": mfe_f.median(),
 
         "avg_mae": mae_f.mean(),
         "median_mae": mae_f.median(),
 
-        # Extremes
         "max_mfe": mfe_f.max(),
         "max_mae": mae_f.min(),
 
-        # Safer SL/TP zones (percentiles)
+        # TP zones
         "tp_70": mfe_f.quantile(0.70),
         "tp_50": mfe_f.quantile(0.50),
 
+        # SL zones (negative values)
         "sl_30": mae_f.quantile(0.30),
         "sl_10": mae_f.quantile(0.10),
 
-        # Probabilities
+        # probabilities
         "prob_tp50_hit": (mfe_f > mfe_f.quantile(0.50)).mean(),
         "prob_tp70_hit": (mfe_f > mfe_f.quantile(0.70)).mean(),
 
@@ -126,16 +130,10 @@ def excursion_statistics(mfe, mae, mask):
 
 
 # ============================================================
-# 5. BEHAVIOR EXPECTANCY (NEW)
+# 6. BEHAVIOR EXPECTANCY
 # ============================================================
 
 def behavior_expectancy(stats):
-    """
-    Expectancy using behavior-derived TP/SL.
-
-    Formula:
-        E = (Pwin * AvgWin) - (Ploss * AvgLoss)
-    """
 
     if not stats:
         return 0.0
@@ -143,7 +141,6 @@ def behavior_expectancy(stats):
     avg_win = stats["median_mfe"]
     avg_loss = abs(stats["median_mae"])
 
-    # crude probability proxy
     p_win = stats["prob_tp50_hit"]
     p_loss = 1 - p_win
 
@@ -153,7 +150,7 @@ def behavior_expectancy(stats):
 
 
 # ============================================================
-# 6. UPGRADED CE TABLE (NON-BREAKING)
+# 7. CE TABLE (UPGRADED NON-BREAKING)
 # ============================================================
 
 def generate_ce_table(condition_dict, data, forward_points=20):
@@ -167,7 +164,7 @@ def generate_ce_table(condition_dict, data, forward_points=20):
 
         mask = filter_conditions(data, cond_fn)
 
-        ce = calculate_expectancy(mask, outcomes)
+        ce_forward = calculate_expectancy(mask, outcomes)
 
         wins = (outcomes[mask] > 0).sum()
         total = mask.sum()
@@ -179,7 +176,7 @@ def generate_ce_table(condition_dict, data, forward_points=20):
 
         results.append({
             "condition": name,
-            "ce_forward": ce,
+            "ce_forward": ce_forward,
             "ce_behavior": behavior_ce,
             "winrate": winrate,
             "samples": int(total),
@@ -193,7 +190,7 @@ def generate_ce_table(condition_dict, data, forward_points=20):
 
 
 # ============================================================
-# 7. EXPECTANCY SUMMARY (UPDATED)
+# 8. EXPECTANCY SUMMARY
 # ============================================================
 
 def expectancy_summary(ce_table):
