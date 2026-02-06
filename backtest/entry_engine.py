@@ -259,6 +259,9 @@ def generate_quant_signals(data):
 # SELF TEST
 # ============================================================
 
+from chart_visualizer import plot_chart_with_signals
+
+
 if __name__ == "__main__":
 
     np.random.seed(42)
@@ -277,5 +280,8 @@ if __name__ == "__main__":
 
     print("\nEntry summary:")
     print(entry_summary(signals))
+
+    # 🔥 langsung gambar chart
+    plot_chart_with_signals(df, signals)
 
     print("\nBehavior Entry Engine OK")
