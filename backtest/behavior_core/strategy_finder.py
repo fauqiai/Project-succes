@@ -1,47 +1,85 @@
 """
 strategy_finder.py
-Behavior-Based Strategy Finder (FINAL IMPORT SAFE)
+Behavior-Based Strategy Finder (QUANT v2)
 
-Upgrades:
-- Uses MFE / MAE from expectancy engine
-- Calculates TRUE Expected Value
-- Avoids winrate trap
-- Scores real opportunity vs risk
-ASCII safe.
+MAJOR UPGRADE:
+- Multi-condition strategies
+- Behavior stacking
+- True Expected Value
+- Sample protection
+- Volatility filter
 """
 
 import pandas as pd
 import numpy as np
 
-# ✅ IMPORT FIX (VERY IMPORTANT)
 from behavior_core.expectancy import compute_excursions
 
 
 # ============================================================
-# 1. STRATEGY RULE BUILDER
+# 1. FEATURE PREP
 # ============================================================
 
-def build_strategy_rules():
+def prepare_features(data):
+
+    data = data.copy()
+
+    data["range"] = data["high"] - data["low"]
+    data["body"] = (data["close"] - data["open"]).abs()
+
+    # volatility baseline
+    data["avg_range"] = data["range"].rolling(20, min_periods=5).mean()
+
+    # impulse proxy
+    data["impulse"] = data["range"] > data["avg_range"] * 1.5
+
+    # strong body
+    data["strong_body"] = data["body"] > data["range"] * 0.6
+
+    return data
+
+
+# ============================================================
+# 2. STRATEGY BUILDER (MULTI CONDITION)
+# ============================================================
+
+def build_strategy_rules(data):
 
     rules = {}
 
-    rules["bullish_candle"] = lambda r: r["close"] > r["open"]
+    # 🔥 MUCH smarter than bearish candle
 
-    rules["bearish_candle"] = lambda r: r["close"] < r["open"]
-
-    rules["large_range"] = lambda r: (r["high"] - r["low"]) > (
-        (r["high"] - r["low"]) * 0.7
+    rules["bearish_impulse"] = lambda r: (
+        (r["close"] < r["open"]) and
+        (r["impulse"])
     )
 
-    rules["small_body"] = lambda r: abs(r["close"] - r["open"]) < (
-        (r["high"] - r["low"]) * 0.3
+    rules["bullish_impulse"] = lambda r: (
+        (r["close"] > r["open"]) and
+        (r["impulse"])
+    )
+
+    rules["strong_bearish_break"] = lambda r: (
+        (r["close"] < r["open"]) and
+        (r["strong_body"]) and
+        (r["range"] > r["avg_range"])
+    )
+
+    rules["volatility_expansion_buy"] = lambda r: (
+        (r["close"] > r["open"]) and
+        (r["range"] > r["avg_range"] * 1.3)
+    )
+
+    rules["volatility_expansion_sell"] = lambda r: (
+        (r["close"] < r["open"]) and
+        (r["range"] > r["avg_range"] * 1.3)
     )
 
     return rules
 
 
 # ============================================================
-# 2. MASK BUILDER
+# 3. MASK BUILDER
 # ============================================================
 
 def build_mask(data, rule_fn):
@@ -49,7 +87,7 @@ def build_mask(data, rule_fn):
 
 
 # ============================================================
-# 3. TRUE EV CALCULATION (CORE)
+# 4. TRUE EV
 # ============================================================
 
 def calculate_true_ev(mfe, mae, mask):
@@ -59,7 +97,7 @@ def calculate_true_ev(mfe, mae, mask):
 
     samples = len(mfe_f)
 
-    if samples == 0:
+    if samples < 40:   # 🔥 sample protection
         return None
 
     avg_up = mfe_f.mean()
@@ -67,7 +105,6 @@ def calculate_true_ev(mfe, mae, mask):
 
     winrate = (mfe_f > abs(mae_f)).mean()
 
-    # TRUE EXPECTED VALUE
     ev = (avg_up * winrate) - (avg_down * (1 - winrate))
 
     return {
@@ -80,16 +117,20 @@ def calculate_true_ev(mfe, mae, mask):
 
 
 # ============================================================
-# 4. STRATEGY EVALUATION ENGINE
+# 5. EVALUATION ENGINE
 # ============================================================
 
-def evaluate_strategies(data, strategy_rules, forward_points=20):
+def evaluate_strategies(data, forward_points=20):
+
+    data = prepare_features(data)
 
     mfe, mae = compute_excursions(data, forward_points)
 
+    rules = build_strategy_rules(data)
+
     results = {}
 
-    for name, rule_fn in strategy_rules.items():
+    for name, rule_fn in rules.items():
 
         mask = build_mask(data, rule_fn)
 
@@ -98,23 +139,19 @@ def evaluate_strategies(data, strategy_rules, forward_points=20):
         if stats is None:
             continue
 
-        # kill low sample strategies
-        if stats["samples"] < 30:
-            continue
-
         results[name] = stats
 
     return results
 
 
 # ============================================================
-# 5. SMART RANKING
+# 6. SMART RANKING
 # ============================================================
 
-def rank_strategies(strategy_results):
+def rank_strategies(results):
 
     ranked = sorted(
-        strategy_results.items(),
+        results.items(),
         key=lambda x: x[1]["EV"],
         reverse=True
     )
@@ -123,16 +160,13 @@ def rank_strategies(strategy_results):
 
 
 # ============================================================
-# 6. BEST STRATEGY SELECTOR
+# 7. BEST SELECTOR
 # ============================================================
 
 def find_best_strategies(data, forward_points=20):
 
-    rules = build_strategy_rules()
-
     evaluated = evaluate_strategies(
         data,
-        rules,
         forward_points
     )
 
@@ -144,14 +178,14 @@ def find_best_strategies(data, forward_points=20):
 
 
 # ============================================================
-# 7. STRATEGY SUMMARY
+# 8. SUMMARY
 # ============================================================
 
-def strategy_summary(best_strategies):
+def strategy_summary(best):
 
     summary = []
 
-    for name, stats in best_strategies:
+    for name, stats in best:
 
         summary.append({
             "strategy": name,
@@ -172,7 +206,7 @@ def strategy_summary(best_strategies):
 if __name__ == "__main__":
 
     np.random.seed(42)
-    size = 300
+    size = 500
 
     price = np.cumsum(np.random.randn(size)) + 100
 
@@ -183,21 +217,10 @@ if __name__ == "__main__":
         "close": price + np.random.randn(size) * 0.1,
     })
 
-    # debug: lihat hasil evaluate_strategies mentah (raw stats per strategy)
-    rules = build_strategy_rules()
-    evaluated = evaluate_strategies(df, rules, forward_points=20)
-    print("\nRAW evaluated (per strategy):\n")
-    for k, v in evaluated.items():
-        print(k, "->", v)
-    
-    # show ranked best + final summary
-    best = find_best_strategies(df, forward_points=20)
-    print("\nBEST (ranked positive EV):\n", best)
+    best = find_best_strategies(df)
 
-    summary = strategy_summary(best)
-    print("\nSummary:")
-    for row in summary:
-        print(row)
+    print("\nBEST STRATEGIES:\n")
+    for name, stats in best:
+        print(name, "->", stats)
 
-    print("\nStrategy Finder Behavior Engine OK")
-
+    print("\nStrategy Finder QUANT v2 READY")
