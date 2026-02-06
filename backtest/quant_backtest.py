@@ -12,7 +12,6 @@ import numpy as np
 from behavior_core.measures import *
 from behavior_core.event_detection import *
 from behavior_core.regime_detection import *
-from behavior_core.microstructure import *
 from behavior_core.transitions import *
 from behavior_core.expectancy import *
 from behavior_core.strategy_finder import *
@@ -36,50 +35,61 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
         print("Gagal load data.")
         return
 
-    # RESET INDEX BIAR NUMERIK (INI PENTING)
+    # RESET INDEX BIAR NUMERIK
     data = data.reset_index(drop=True)
+
+    # ============================================================
+    # MEASURES
+    # ============================================================
 
     print("Calculating measures...")
     data["range"] = data["high"] - data["low"]
     data["body"] = (data["close"] - data["open"]).abs()
     data["atr"] = data["range"].rolling(ATR_PERIOD, min_periods=1).mean()
 
+    # ============================================================
+    # EVENT DETECTION
+    # ============================================================
+
     print("Detecting events...")
+
     impulse_mask = detect_impulse(data, data["atr"])
     retrace_mask = detect_retracement(data)
     cons_mask = detect_consolidation(data)
 
     event_sequence = []
+
     for i in range(len(data)):
+
         if impulse_mask.iloc[i]:
             event_sequence.append("impulse")
+
         elif retrace_mask.iloc[i]:
             event_sequence.append("retracement")
+
         elif cons_mask.iloc[i]:
             event_sequence.append("consolidation")
+
         else:
             event_sequence.append("neutral")
 
     event_summary = pd.Series(event_sequence).value_counts().to_dict()
 
+    # ============================================================
+    # REGIME DETECTION
+    # ============================================================
+
     print("Detecting regime...")
+
     regime_sequence = classify_regime(data)
     regime_summary = pd.Series(regime_sequence).value_counts().to_dict()
 
-    print("Detecting microstructure...")
-    micro_flags = {
-        "sweep": detect_sweep(data),
-        "imbalance": detect_imbalance(data),
-        "fvg": detect_fvg(data),
-        "displacement": detect_displacement(data),
-        "sfp": detect_sfp(data),
-        "orderflow_shift": detect_orderflow_shift(data),
-    }
-
-    micro_summary = {k: int(v.sum()) for k, v in micro_flags.items()}
+    # ============================================================
+    # 🔥 MICROSTRUCTURE REMOVED (INTENTIONAL)
+    # ============================================================
 
     # ============================================================
-    # 🔥 FIX ADA DI SINI (TRANSITION PIPELINE)
+    # TRANSITIONS
     # ============================================================
 
     print("Building behavior transitions...")
@@ -89,22 +99,20 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
         regimes=regime_sequence
     )
 
-    # STEP 1 — RAW BEHAVIOR TRANSITIONS
     transitions = build_behavior_transitions(
         sequence=combined_sequence,
         data=data,
         forward_points=forward_points
     )
 
-    # STEP 2 — HITUNG STATS (INI YANG DULU KELEWAT)
     transition_stats = compute_transition_stats(transitions)
 
-    # STEP 3 — FLOW MATRIX
     transition_matrix = build_flow_matrix(transition_stats)
 
-    # STEP 4 — SUMMARY (SEKARANG AMAN)
     transition_summary_data = transition_summary(transition_matrix)
 
+    # ============================================================
+    # EXPECTANCY
     # ============================================================
 
     print("Calculating Conditional Expectancy...")
@@ -123,7 +131,12 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
 
     ce_summary = expectancy_summary(ce_table)
 
+    # ============================================================
+    # STRATEGY FINDER
+    # ============================================================
+
     print("Finding best strategies...")
+
     best_strategies = find_best_strategies(
         data,
         forward_points=forward_points
@@ -131,7 +144,12 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
 
     best_strategy_summary = strategy_summary(best_strategies)
 
+    # ============================================================
+    # REPORT
+    # ============================================================
+
     print("Generating report...")
+
     report_text = build_report(
         event_summary=event_summary,
         regime_summary=regime_summary,
@@ -143,14 +161,16 @@ def run_quant_backtest(path_to_csv, timeframe=None, forward_points=10):
     save_report(report_text)
 
     print("Quant Behavior analysis complete.")
+
     return report_text
 
 
 # ============================================================
-# 2. MAIN EXECUTION
+# MAIN
 # ============================================================
 
 if __name__ == "__main__":
+
     print("Quant Behavior Backtest Engine Running...")
 
     DATA_PATH = "xauusd_m1_cleaned.csv"
