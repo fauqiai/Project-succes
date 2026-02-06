@@ -10,14 +10,10 @@ Features:
 - Take Profit line
 """
 
-from entry_engine import generate_entry_signals
 import matplotlib.pyplot as plt
 
 from data_loader import load_and_prepare
-from behavior_core.event_detection import *
-from behavior_core.regime_detection import *
-from behavior_core.microstructure import *
-
+from entry_engine import generate_entry_signals
 from config import *
 
 
@@ -44,9 +40,7 @@ def prepare_visual_data(path_to_csv, timeframe=None):
 # SIMPLE CANDLE PLOT
 # ============================================================
 
-def plot_candles(data, max_bars=300):
-
-    data = data.tail(max_bars).reset_index(drop=True)
+def plot_candles(data):
 
     fig, ax = plt.subplots(figsize=(16,7))
 
@@ -65,59 +59,36 @@ def plot_candles(data, max_bars=300):
         # body
         ax.plot([i, i], [o, c], linewidth=4, color=color)
 
-    return fig, ax, data
+    return fig, ax
 
 
 # ============================================================
-# DRAW TRADING SIGNALS
+# DRAW TRADING SIGNALS (FIXED)
 # ============================================================
 
-def overlay_entries(ax, data, signals):
-
-    start_index = len(data)
+def overlay_entries(ax, signals):
 
     for signal in signals:
 
         i = signal["index"]
-
-        # hanya tampilkan yang masuk area chart
-        if i < (len(signals) - start_index):
-            continue
-
-        chart_i = i - (len(signals) - start_index)
-
-        if chart_i < 0 or chart_i >= len(data):
-            continue
-
         entry = signal["entry"]
         sl = signal["sl"]
         tp = signal["tp"]
 
         if signal["type"] == "BUY":
-
-            # BUY arrow
-            ax.scatter(chart_i, entry, marker="^", s=120)
-
+            ax.scatter(i, entry, marker="^", s=120)
         else:
+            ax.scatter(i, entry, marker="v", s=120)
 
-            # SELL arrow
-            ax.scatter(chart_i, entry, marker="v", s=120)
+        # SL
+        ax.hlines(sl, i-3, i+3, linestyles="dashed")
 
-        # SL line
-        ax.hlines(sl,
-                  chart_i-3,
-                  chart_i+3,
-                  linestyles="dashed")
-
-        # TP line
-        ax.hlines(tp,
-                  chart_i-3,
-                  chart_i+3,
-                  linestyles="solid")
+        # TP
+        ax.hlines(tp, i-3, i+3, linestyles="solid")
 
 
 # ============================================================
-# FULL PIPELINE
+# FULL PIPELINE (FIXED)
 # ============================================================
 
 def run_chart_visualizer(path_to_csv,
@@ -130,13 +101,16 @@ def run_chart_visualizer(path_to_csv,
     if data is None:
         return
 
+    # 🔥 BATASI DATA DULU (SUPER IMPORTANT)
+    data = data.tail(max_bars).reset_index(drop=True)
+
     print("Generating entries...")
     signals = generate_entry_signals(data)
 
     print("Plotting chart...")
-    fig, ax, data = plot_candles(data, max_bars)
+    fig, ax = plot_candles(data)
 
-    overlay_entries(ax, data, signals)
+    overlay_entries(ax, signals)
 
     plt.title("Quant Behavior Trading Chart")
     plt.grid(alpha=0.2)
