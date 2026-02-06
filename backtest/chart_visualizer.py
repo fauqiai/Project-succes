@@ -10,6 +10,7 @@ Features:
 - Take Profit line
 """
 
+from entry_engine import generate_entry_signals
 import matplotlib.pyplot as plt
 
 from data_loader import load_and_prepare
