@@ -197,6 +197,65 @@ def entry_summary(signals):
 
 
 # ============================================================
+# QUANT DECISION ENGINE (FROM REPORT)
+# ============================================================
+
+def quant_decision(row):
+    """
+    Mengubah behavior menjadi keputusan BUY / SELL.
+    Berdasarkan hasil Quant Report:
+    - Bearish candle = edge tertinggi
+    """
+
+    open_price = row["open"]
+    close_price = row["close"]
+
+    body = close_price - open_price
+
+    # ===== PRIORITY EDGE =====
+    # Bearish candle -> SELL
+    if body < 0:
+        return {
+            "type": "SELL",
+            "confidence": 0.55,   # dari winrate ~51-53%
+        }
+
+    # Bullish -> BUY tapi confidence lebih kecil
+    if body > 0:
+        return {
+            "type": "BUY",
+            "confidence": 0.51,
+        }
+
+    return None
+
+
+# ============================================================
+# GENERATE SIGNALS FROM QUANT
+# ============================================================
+
+def generate_quant_signals(data):
+
+    signals = []
+
+    for i in range(len(data)):
+
+        decision = quant_decision(data.iloc[i])
+
+        if decision is None:
+            continue
+
+        signals.append({
+            "index": i,
+            "price": data.iloc[i]["close"],
+            "type": decision["type"],
+            "confidence": decision["confidence"]
+        })
+
+    return signals
+
+
+# ============================================================
 # SELF TEST
 # ============================================================
 
