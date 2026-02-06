@@ -256,13 +256,12 @@ def generate_quant_signals(data):
 
 
 # ============================================================
-# SELF TEST
+# SELF TEST (SAFE — NO VISUALIZER)
 # ============================================================
 
-from chart_visualizer import plot_chart_with_signals
-
-
 if __name__ == "__main__":
+
+    print("Running Entry Engine self test...")
 
     np.random.seed(42)
     size = 400
@@ -281,7 +280,4 @@ if __name__ == "__main__":
     print("\nEntry summary:")
     print(entry_summary(signals))
 
-    # 🔥 langsung gambar chart
-    plot_chart_with_signals(df, signals)
-
-    print("\nBehavior Entry Engine OK")
+    print("\nEntry Engine OK ✅")
