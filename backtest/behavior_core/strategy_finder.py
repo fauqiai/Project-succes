@@ -1,226 +1,149 @@
 """
 strategy_finder.py
-Behavior-Based Strategy Finder (QUANT v2)
+-----------------
+Strategy Finder V3
 
-MAJOR UPGRADE:
-- Multi-condition strategies
-- Behavior stacking
-- True Expected Value
-- Sample protection
-- Volatility filter
+Behavior + Regime aware.
+Mencari edge nyata di market.
 """
 
 import pandas as pd
 import numpy as np
 
-from behavior_core.expectancy import compute_excursions
+from .event_detection import detect_impulse, detect_retracement, detect_consolidation
+from .regime_detection import classify_regime
+from .expectancy import compute_excursions
 
 
 # ============================================================
-# 1. FEATURE PREP
+# CONFIG
 # ============================================================
 
-def prepare_features(data):
-
-    data = data.copy()
-
-    data["range"] = data["high"] - data["low"]
-    data["body"] = (data["close"] - data["open"]).abs()
-
-    # volatility baseline
-    data["avg_range"] = data["range"].rolling(20, min_periods=5).mean()
-
-    # impulse proxy
-    data["impulse"] = data["range"] > data["avg_range"] * 1.5
-
-    # strong body
-    data["strong_body"] = data["body"] > data["range"] * 0.6
-
-    return data
+MIN_SAMPLES = 200
+MIN_WINRATE = 0.52
 
 
 # ============================================================
-# 2. STRATEGY BUILDER (MULTI CONDITION)
+# BUILD CONDITIONS
 # ============================================================
 
-def build_strategy_rules(data):
+def build_conditions(data):
 
-    rules = {}
+    atr = (data["high"] - data["low"]).rolling(14, min_periods=1).mean()
 
-    # 🔥 MUCH smarter than bearish candle
+    impulse = detect_impulse(data, atr)
+    retracement = detect_retracement(data)
+    consolidation = detect_consolidation(data)
 
-    rules["bearish_impulse"] = lambda r: (
-        (r["close"] < r["open"]) and
-        (r["impulse"])
-    )
+    regime = classify_regime(data)
 
-    rules["bullish_impulse"] = lambda r: (
-        (r["close"] > r["open"]) and
-        (r["impulse"])
-    )
+    conditions = {
 
-    rules["strong_bearish_break"] = lambda r: (
-        (r["close"] < r["open"]) and
-        (r["strong_body"]) and
-        (r["range"] > r["avg_range"])
-    )
+        # 🔥 TREND IMPULSE (bias continuation)
+        "trend_impulse_buy":
+            (impulse) & (pd.Series(regime) == "trend") & (data["close"] > data["open"]),
 
-    rules["volatility_expansion_buy"] = lambda r: (
-        (r["close"] > r["open"]) and
-        (r["range"] > r["avg_range"] * 1.3)
-    )
+        "trend_impulse_sell":
+            (impulse) & (pd.Series(regime) == "trend") & (data["close"] < data["open"]),
 
-    rules["volatility_expansion_sell"] = lambda r: (
-        (r["close"] < r["open"]) and
-        (r["range"] > r["avg_range"] * 1.3)
-    )
+        # 🔥 RANGE RETRACE (mean reversion)
+        "range_retrace_buy":
+            (retracement) & (pd.Series(regime) == "range") & (data["close"] > data["open"]),
 
-    return rules
+        "range_retrace_sell":
+            (retracement) & (pd.Series(regime) == "range") & (data["close"] < data["open"]),
 
+        # 🔥 CONSOLIDATION BREAK (early expansion)
+        "breakout_buy":
+            (consolidation) & (data["close"] > data["open"]),
 
-# ============================================================
-# 3. MASK BUILDER
-# ============================================================
+        "breakout_sell":
+            (consolidation) & (data["close"] < data["open"]),
+    }
 
-def build_mask(data, rule_fn):
-    return data.apply(rule_fn, axis=1).fillna(False)
+    return conditions
 
 
 # ============================================================
-# 4. TRUE EV
+# EVALUATE STRATEGY
 # ============================================================
 
-def calculate_true_ev(mfe, mae, mask):
+def evaluate_strategy(mask, data, forward_points):
 
-    mfe_f = mfe[mask]
-    mae_f = mae[mask]
+    indices = np.where(mask)[0]
 
-    samples = len(mfe_f)
-
-    if samples < 40:   # 🔥 sample protection
+    if len(indices) < MIN_SAMPLES:
         return None
 
-    avg_up = mfe_f.mean()
-    avg_down = abs(mae_f.mean())
+    excursions = compute_excursions(data, indices, forward_points)
 
-    winrate = (mfe_f > abs(mae_f)).mean()
+    if excursions is None:
+        return None
 
-    ev = (avg_up * winrate) - (avg_down * (1 - winrate))
+    avg_up = excursions["avg_up"]
+    avg_down = excursions["avg_down"]
+    winrate = excursions["winrate"]
+
+    EV = (avg_up * winrate) - (avg_down * (1 - winrate))
+
+    if winrate < MIN_WINRATE:
+        return None
 
     return {
-        "EV": ev,
-        "avg_up_move": avg_up,
-        "avg_down_move": avg_down,
-        "winrate": winrate,
-        "samples": samples
+        "EV": float(EV),
+        "avg_up_move": float(avg_up),
+        "avg_down_move": float(avg_down),
+        "winrate": float(winrate),
+        "samples": int(len(indices))
     }
 
 
 # ============================================================
-# 5. EVALUATION ENGINE
+# MAIN FINDER
 # ============================================================
 
-def evaluate_strategies(data, forward_points=20):
+def find_best_strategies(data, forward_points=10):
 
-    data = prepare_features(data)
+    print("Scanning strategies (V3)...")
 
-    mfe, mae = compute_excursions(data, forward_points)
+    conditions = build_conditions(data)
 
-    rules = build_strategy_rules(data)
+    results = []
 
-    results = {}
+    for name, mask in conditions.items():
 
-    for name, rule_fn in rules.items():
+        stats = evaluate_strategy(mask, data, forward_points)
 
-        mask = build_mask(data, rule_fn)
+        if stats:
+            results.append((name, stats))
 
-        stats = calculate_true_ev(mfe, mae, mask)
+    if not results:
+        print("No strategy with positive expectancy.")
+        return []
 
-        if stats is None:
-            continue
+    # Sort by EV
+    results.sort(key=lambda x: x[1]["EV"], reverse=True)
 
-        results[name] = stats
+    print(f"Found {len(results)} valid strategies.")
+    print("Top strategy:", results[0][0])
 
     return results
 
 
 # ============================================================
-# 6. SMART RANKING
-# ============================================================
-
-def rank_strategies(results):
-
-    ranked = sorted(
-        results.items(),
-        key=lambda x: x[1]["EV"],
-        reverse=True
-    )
-
-    return ranked
-
-
-# ============================================================
-# 7. BEST SELECTOR
-# ============================================================
-
-def find_best_strategies(data, forward_points=20):
-
-    evaluated = evaluate_strategies(
-        data,
-        forward_points
-    )
-
-    ranked = rank_strategies(evaluated)
-
-    best = [(name, stats) for name, stats in ranked if stats["EV"] > 0]
-
-    return best
-
-
-# ============================================================
-# 8. SUMMARY
+# SUMMARY
 # ============================================================
 
 def strategy_summary(best):
 
-    summary = []
+    if not best:
+        return "No valid strategy found."
 
-    for name, stats in best:
+    strategy, stats = best[0]
 
-        summary.append({
-            "strategy": name,
-            "EV": stats["EV"],
-            "avg_up_move": stats["avg_up_move"],
-            "avg_down_move": stats["avg_down_move"],
-            "winrate": stats["winrate"],
-            "samples": stats["samples"]
-        })
-
-    return summary
-
-
-# ============================================================
-# SELF TEST
-# ============================================================
-
-if __name__ == "__main__":
-
-    np.random.seed(42)
-    size = 500
-
-    price = np.cumsum(np.random.randn(size)) + 100
-
-    df = pd.DataFrame({
-        "open": price + np.random.randn(size) * 0.1,
-        "high": price + np.random.rand(size),
-        "low": price - np.random.rand(size),
-        "close": price + np.random.randn(size) * 0.1,
-    })
-
-    best = find_best_strategies(df)
-
-    print("\nBEST STRATEGIES:\n")
-    for name, stats in best:
-        print(name, "->", stats)
-
-    print("\nStrategy Finder QUANT v2 READY")
+    return {
+        "strategy": strategy,
+        "EV": stats["EV"],
+        "winrate": stats["winrate"],
+        "samples": stats["samples"]
+    }
