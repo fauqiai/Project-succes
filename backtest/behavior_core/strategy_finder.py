@@ -1,10 +1,12 @@
 """
 strategy_finder.py
------------------
-Strategy Finder V3 (FIXED)
+------------------
+
+Strategy Finder V3 (STABLE)
 
 Behavior + Regime aware.
-Mencari edge nyata di market.
+No ambiguous numpy.
+Compatible with Expectancy V3.
 """
 
 import pandas as pd
@@ -14,132 +16,144 @@ from .event_detection import detect_impulse, detect_retracement, detect_consolid
 from .regime_detection import classify_regime
 from .expectancy import compute_excursions
 
-
 MIN_SAMPLES = 200
 MIN_WINRATE = 0.52
 
-
 # ============================================================
+
 # BUILD CONDITIONS
+
 # ============================================================
 
 def build_conditions(data):
 
-    atr = (data["high"] - data["low"]).rolling(14, min_periods=1).mean()
+```
+atr = (data["high"] - data["low"]).rolling(14, min_periods=1).mean()
 
-    impulse = detect_impulse(data, atr)
-    retracement = detect_retracement(data)
-    consolidation = detect_consolidation(data)
+impulse = detect_impulse(data, atr)
+retracement = detect_retracement(data)
+consolidation = detect_consolidation(data)
 
-    regime = pd.Series(classify_regime(data), index=data.index)
+regime = pd.Series(classify_regime(data), index=data.index)
 
-    conditions = {
+conditions = {
 
-        # TREND CONTINUATION
-        "trend_impulse_buy":
-            impulse & (regime == "trend") & (data["close"] > data["open"]),
+    # TREND CONTINUATION
+    "trend_impulse_buy":
+        impulse & (regime == "trend") & (data["close"] > data["open"]),
 
-        "trend_impulse_sell":
-            impulse & (regime == "trend") & (data["close"] < data["open"]),
+    "trend_impulse_sell":
+        impulse & (regime == "trend") & (data["close"] < data["open"]),
 
-        # RANGE MEAN REVERSION
-        "range_retrace_buy":
-            retracement & (regime == "range") & (data["close"] > data["open"]),
+    # RANGE MEAN REVERSION
+    "range_retrace_buy":
+        retracement & (regime == "range") & (data["close"] > data["open"]),
 
-        "range_retrace_sell":
-            retracement & (regime == "range") & (data["close"] < data["open"]),
+    "range_retrace_sell":
+        retracement & (regime == "range") & (data["close"] < data["open"]),
 
-        # BREAKOUT
-        "breakout_buy":
-            consolidation & (data["close"] > data["open"]),
+    # BREAKOUT
+    "breakout_buy":
+        consolidation & (data["close"] > data["open"]),
 
-        "breakout_sell":
-            consolidation & (data["close"] < data["open"]),
-    }
+    "breakout_sell":
+        consolidation & (data["close"] < data["open"]),
+}
 
-    return conditions
-
+return conditions
+```
 
 # ============================================================
+
 # EVALUATE
+
 # ============================================================
 
 def evaluate_strategy(mask, data, forward_points):
 
-    indices = np.where(mask)[0]
+```
+# 🔥 FIX BESAR — convert mask ke numpy
+indices = np.where(mask.to_numpy())[0]
 
-    if len(indices) < MIN_SAMPLES:
-        return None
+if len(indices) < MIN_SAMPLES:
+    return None
 
-    # ✅ FIX DISINI
-    excursions = compute_excursions(data, indices)
+# 🔥 FIX UTAMA — forward_points HARUS dikirim
+excursions = compute_excursions(data, indices, forward_points)
 
-    if excursions is None:
-        return None
+if excursions is None:
+    return None
 
-    avg_up = excursions["avg_up"]
-    avg_down = excursions["avg_down"]
-    winrate = excursions["winrate"]
+avg_up = excursions["avg_up"]
+avg_down = excursions["avg_down"]
+winrate = excursions["winrate"]
 
-    EV = (avg_up * winrate) - (avg_down * (1 - winrate))
+EV = (avg_up * winrate) - (avg_down * (1 - winrate))
 
-    if winrate < MIN_WINRATE:
-        return None
+if winrate < MIN_WINRATE:
+    return None
 
-    return {
-        "EV": float(EV),
-        "avg_up_move": float(avg_up),
-        "avg_down_move": float(avg_down),
-        "winrate": float(winrate),
-        "samples": int(len(indices))
-    }
-
+return {
+    "EV": float(EV),
+    "avg_up_move": float(avg_up),
+    "avg_down_move": float(avg_down),
+    "winrate": float(winrate),
+    "samples": int(len(indices))
+}
+```
 
 # ============================================================
+
 # FINDER
+
 # ============================================================
 
 def find_best_strategies(data, forward_points=10):
 
-    print("Scanning strategies (V3)...")
+```
+print("Scanning strategies (V3)...")
 
-    conditions = build_conditions(data)
+conditions = build_conditions(data)
 
-    results = []
+results = []
 
-    for name, mask in conditions.items():
+for name, mask in conditions.items():
 
-        stats = evaluate_strategy(mask, data, forward_points)
+    stats = evaluate_strategy(mask, data, forward_points)
 
-        if stats:
-            results.append((name, stats))
+    if stats:
+        results.append((name, stats))
 
-    if not results:
-        print("No strategy with positive expectancy.")
-        return []
+if not results:
+    print("No strategy with positive expectancy.")
+    return []
 
-    results.sort(key=lambda x: x[1]["EV"], reverse=True)
+results.sort(key=lambda x: x[1]["EV"], reverse=True)
 
-    print(f"Found {len(results)} valid strategies.")
-    print("Top strategy:", results[0][0])
+print(f"Found {len(results)} valid strategies.")
+print("Top strategy:", results[0][0])
 
-    return results
-
+return results
+```
 
 # ============================================================
+
 # SUMMARY
+
 # ============================================================
 
 def strategy_summary(best):
 
-    if not best:
-        return "No valid strategy found."
+```
+if not best:
+    return "No valid strategy found."
 
-    strategy, stats = best[0]
+strategy, stats = best[0]
 
-    return {
-        "strategy": strategy,
-        "EV": stats["EV"],
-        "winrate": stats["winrate"],
-        "samples": stats["samples"]
-    }
+return {
+    "strategy": strategy,
+    "EV": stats["EV"],
+    "winrate": stats["winrate"],
+    "samples": stats["samples"]
+}
+```
