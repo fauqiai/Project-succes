@@ -1,7 +1,7 @@
 """
 strategy_finder.py
 -----------------
-Strategy Finder V3
+Strategy Finder V3 (FIXED)
 
 Behavior + Regime aware.
 Mencari edge nyata di market.
@@ -14,10 +14,6 @@ from .event_detection import detect_impulse, detect_retracement, detect_consolid
 from .regime_detection import classify_regime
 from .expectancy import compute_excursions
 
-
-# ============================================================
-# CONFIG
-# ============================================================
 
 MIN_SAMPLES = 200
 MIN_WINRATE = 0.52
@@ -35,37 +31,37 @@ def build_conditions(data):
     retracement = detect_retracement(data)
     consolidation = detect_consolidation(data)
 
-    regime = classify_regime(data)
+    regime = pd.Series(classify_regime(data), index=data.index)
 
     conditions = {
 
-        # 🔥 TREND IMPULSE (bias continuation)
+        # TREND CONTINUATION
         "trend_impulse_buy":
-            (impulse) & (pd.Series(regime) == "trend") & (data["close"] > data["open"]),
+            impulse & (regime == "trend") & (data["close"] > data["open"]),
 
         "trend_impulse_sell":
-            (impulse) & (pd.Series(regime) == "trend") & (data["close"] < data["open"]),
+            impulse & (regime == "trend") & (data["close"] < data["open"]),
 
-        # 🔥 RANGE RETRACE (mean reversion)
+        # RANGE MEAN REVERSION
         "range_retrace_buy":
-            (retracement) & (pd.Series(regime) == "range") & (data["close"] > data["open"]),
+            retracement & (regime == "range") & (data["close"] > data["open"]),
 
         "range_retrace_sell":
-            (retracement) & (pd.Series(regime) == "range") & (data["close"] < data["open"]),
+            retracement & (regime == "range") & (data["close"] < data["open"]),
 
-        # 🔥 CONSOLIDATION BREAK (early expansion)
+        # BREAKOUT
         "breakout_buy":
-            (consolidation) & (data["close"] > data["open"]),
+            consolidation & (data["close"] > data["open"]),
 
         "breakout_sell":
-            (consolidation) & (data["close"] < data["open"]),
+            consolidation & (data["close"] < data["open"]),
     }
 
     return conditions
 
 
 # ============================================================
-# EVALUATE STRATEGY
+# EVALUATE
 # ============================================================
 
 def evaluate_strategy(mask, data, forward_points):
@@ -75,7 +71,8 @@ def evaluate_strategy(mask, data, forward_points):
     if len(indices) < MIN_SAMPLES:
         return None
 
-    excursions = compute_excursions(data, indices, forward_points)
+    # ✅ FIX DISINI
+    excursions = compute_excursions(data, indices)
 
     if excursions is None:
         return None
@@ -99,7 +96,7 @@ def evaluate_strategy(mask, data, forward_points):
 
 
 # ============================================================
-# MAIN FINDER
+# FINDER
 # ============================================================
 
 def find_best_strategies(data, forward_points=10):
@@ -121,7 +118,6 @@ def find_best_strategies(data, forward_points=10):
         print("No strategy with positive expectancy.")
         return []
 
-    # Sort by EV
     results.sort(key=lambda x: x[1]["EV"], reverse=True)
 
     print(f"Found {len(results)} valid strategies.")
