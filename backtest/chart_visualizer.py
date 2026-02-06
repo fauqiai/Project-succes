@@ -17,7 +17,6 @@ from behavior_core.event_detection import *
 from behavior_core.regime_detection import *
 from behavior_core.microstructure import *
 
-from entry_engine import generate_entry_signals
 from config import *
 
 
