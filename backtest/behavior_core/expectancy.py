@@ -1,13 +1,14 @@
 """
 expectancy.py
-Behavior-based Expectancy Engine (FINAL STABLE)
+-------------
+Quant Expectancy Engine (V3)
 
 Features:
-- Forward Conditional Expectancy (legacy safe)
-- MFE / MAE excursion engine
-- Behavior expectancy
-- TP/SL suggestion
-- Distribution-ready stats
+- Forward return
+- MFE / MAE
+- Winrate
+- Avg win / loss
+- True Expectancy (EV)
 
 ASCII safe.
 """
@@ -17,198 +18,138 @@ import numpy as np
 
 
 # ============================================================
-# 1. CONDITION FILTERING
-# ============================================================
-
-def filter_conditions(data, condition_fn):
-    mask = data.apply(condition_fn, axis=1)
-    return mask.fillna(False)
-
-
-# ============================================================
-# 2. FORWARD RETURN (LEGACY)
-# ============================================================
-
-def compute_outcomes(data, forward_points=20):
-
-    close = data["close"]
-    future_close = close.shift(-forward_points)
-
-    outcome = (future_close - close) / close
-    return outcome.fillna(0.0)
-
-
-# ============================================================
-# 3. CONDITIONAL EXPECTANCY (LEGACY - MUST EXIST)
-# ============================================================
-
-def calculate_expectancy(conditions, outcomes):
-
-    if len(conditions) == 0:
-        return 0.0
-
-    filtered = outcomes[conditions]
-
-    if len(filtered) == 0:
-        return 0.0
-
-    return filtered.mean()
-
-
-# ============================================================
-# 4. MFE / MAE ENGINE
+# 1. EXCURSIONS (CORE ENGINE)
 # ============================================================
 
 def compute_excursions(data, forward_points=20):
+    """
+    Menghitung MFE dan MAE untuk setiap candle.
+    Tidak pakai indices lagi -> biar sinkron V3.
+    """
 
-    highs = data["high"].values
-    lows = data["low"].values
-    closes = data["close"].values
+    closes = data["close"]
+    highs = data["high"]
+    lows = data["low"]
 
-    n = len(data)
+    mfe = []
+    mae = []
 
-    mfe = np.zeros(n)
-    mae = np.zeros(n)
+    size = len(data)
 
-    for i in range(n):
+    for i in range(size):
 
-        end = min(i + forward_points, n - 1)
+        end = min(i + forward_points, size - 1)
 
-        if i >= end:
-            continue
+        future_high = highs.iloc[i:end].max()
+        future_low = lows.iloc[i:end].min()
 
-        future_high = np.max(highs[i+1:end+1])
-        future_low = np.min(lows[i+1:end+1])
+        entry = closes.iloc[i]
 
-        entry = closes[i]
+        mfe.append((future_high - entry) / entry)
+        mae.append((future_low - entry) / entry)
 
-        mfe[i] = (future_high - entry) / entry
-        mae[i] = (future_low - entry) / entry
-
-    return pd.Series(mfe, index=data.index), pd.Series(mae, index=data.index)
+    return pd.Series(mfe), pd.Series(mae)
 
 
 # ============================================================
-# 5. EXCURSION STATISTICS
+# 2. FORWARD RETURNS
 # ============================================================
 
-def excursion_statistics(mfe, mae, mask):
+def compute_forward_returns(data, forward_points=20):
 
-    mfe_f = mfe[mask]
-    mae_f = mae[mask]
+    closes = data["close"]
 
-    if len(mfe_f) == 0:
-        return {}
+    forward_returns = closes.shift(-forward_points)
+    forward_returns = (forward_returns - closes) / closes
+
+    return forward_returns.fillna(0)
+
+
+# ============================================================
+# 3. EXPECTANCY CALCULATION
+# ============================================================
+
+def calculate_expectancy(mask, data, forward_points=20):
+    """
+    Hitung statistik expectancy berdasarkan kondisi / strategy mask.
+    """
+
+    indices = np.where(mask)[0]
+
+    if len(indices) < 30:   # hindari noise
+        return None
+
+    forward_returns = compute_forward_returns(data, forward_points)
+    mfe, mae = compute_excursions(data, forward_points)
+
+    returns = forward_returns.iloc[indices]
+    mfe_vals = mfe.iloc[indices]
+    mae_vals = mae.iloc[indices]
+
+    wins = returns[returns > 0]
+    losses = returns[returns <= 0]
+
+    winrate = len(wins) / len(returns)
+
+    avg_win = wins.mean() if len(wins) > 0 else 0
+    avg_loss = abs(losses.mean()) if len(losses) > 0 else 0
+
+    # ⭐ TRUE EXPECTANCY
+    expectancy = (winrate * avg_win) - ((1 - winrate) * avg_loss)
 
     stats = {
-
-        "avg_mfe": mfe_f.mean(),
-        "median_mfe": mfe_f.median(),
-
-        "avg_mae": mae_f.mean(),
-        "median_mae": mae_f.median(),
-
-        "max_mfe": mfe_f.max(),
-        "max_mae": mae_f.min(),
-
-        # TP zones
-        "tp_70": mfe_f.quantile(0.70),
-        "tp_50": mfe_f.quantile(0.50),
-
-        # SL zones (negative values)
-        "sl_30": mae_f.quantile(0.30),
-        "sl_10": mae_f.quantile(0.10),
-
-        # probabilities
-        "prob_tp50_hit": (mfe_f > mfe_f.quantile(0.50)).mean(),
-        "prob_tp70_hit": (mfe_f > mfe_f.quantile(0.70)).mean(),
-
-        "samples": int(mask.sum())
+        "samples": len(indices),
+        "winrate": winrate,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "EV": expectancy,
+        "avg_up_move": mfe_vals.mean(),
+        "avg_down_move": abs(mae_vals.mean()),
     }
 
     return stats
 
 
 # ============================================================
-# 6. BEHAVIOR EXPECTANCY
-# ============================================================
-
-def behavior_expectancy(stats):
-
-    if not stats:
-        return 0.0
-
-    avg_win = stats["median_mfe"]
-    avg_loss = abs(stats["median_mae"])
-
-    p_win = stats["prob_tp50_hit"]
-    p_loss = 1 - p_win
-
-    expectancy = (p_win * avg_win) - (p_loss * avg_loss)
-
-    return expectancy
-
-
-# ============================================================
-# 7. CE TABLE (UPGRADED NON-BREAKING)
+# 4. CONDITIONAL EXPECTANCY TABLE
 # ============================================================
 
 def generate_ce_table(condition_dict, data, forward_points=20):
 
-    results = []
+    table = {}
 
-    outcomes = compute_outcomes(data, forward_points)
-    mfe, mae = compute_excursions(data, forward_points)
+    for name, condition in condition_dict.items():
 
-    for name, cond_fn in condition_dict.items():
+        mask = data.apply(condition, axis=1).values
 
-        mask = filter_conditions(data, cond_fn)
+        stats = calculate_expectancy(
+            mask,
+            data,
+            forward_points
+        )
 
-        ce_forward = calculate_expectancy(mask, outcomes)
+        if stats:
+            table[name] = stats
 
-        wins = (outcomes[mask] > 0).sum()
-        total = mask.sum()
-        winrate = wins / total if total > 0 else 0.0
-
-        stats = excursion_statistics(mfe, mae, mask)
-
-        behavior_ce = behavior_expectancy(stats) if stats else 0.0
-
-        results.append({
-            "condition": name,
-            "ce_forward": ce_forward,
-            "ce_behavior": behavior_ce,
-            "winrate": winrate,
-            "samples": int(total),
-            "tp_70": stats.get("tp_70", 0),
-            "sl_30": stats.get("sl_30", 0),
-            "median_mfe": stats.get("median_mfe", 0),
-            "median_mae": stats.get("median_mae", 0),
-        })
-
-    return pd.DataFrame(results)
+    return table
 
 
 # ============================================================
-# 8. EXPECTANCY SUMMARY
+# 5. SUMMARY
 # ============================================================
 
-def expectancy_summary(ce_table):
+def expectancy_summary(table):
 
-    if ce_table.empty:
+    if not table:
         return {}
 
-    best = ce_table.sort_values("ce_behavior", ascending=False).iloc[0]
+    ranked = sorted(
+        table.items(),
+        key=lambda x: x[1]["EV"],
+        reverse=True
+    )
 
-    return {
-        "best_condition": best["condition"],
-        "behavior_ce": best["ce_behavior"],
-        "forward_ce": best["ce_forward"],
-        "winrate": best["winrate"],
-        "samples": best["samples"],
-        "suggested_tp": best["tp_70"],
-        "suggested_sl": best["sl_30"]
-    }
+    return ranked
 
 
 # ============================================================
@@ -218,30 +159,25 @@ def expectancy_summary(ce_table):
 if __name__ == "__main__":
 
     np.random.seed(42)
-    size = 200
+    size = 500
 
     price = np.cumsum(np.random.randn(size)) + 100
 
     df = pd.DataFrame({
-        "open": price + np.random.randn(size) * 0.1,
+        "open": price,
         "high": price + np.random.rand(size),
         "low": price - np.random.rand(size),
-        "close": price + np.random.randn(size) * 0.1,
+        "close": price
     })
 
-    conditions = {
-        "bull_candle": lambda r: r["close"] > r["open"],
-        "bear_candle": lambda r: r["close"] < r["open"],
-        "wide_range": lambda r: (r["high"] - r["low"]) > 1.2
+    condition_dict = {
+        "bullish": lambda r: r["close"] > r["open"],
+        "bearish": lambda r: r["close"] < r["open"],
     }
 
-    ce_table = generate_ce_table(conditions, df, forward_points=20)
-    summary = expectancy_summary(ce_table)
+    table = generate_ce_table(condition_dict, df)
 
-    print("\nCE Table:")
-    print(ce_table)
+    print("\nEXPECTANCY SUMMARY:\n")
+    print(expectancy_summary(table))
 
-    print("\nSummary:")
-    print(summary)
-
-    print("\nBehavior Expectancy Engine OK")
+    print("\nQuant Expectancy Engine V3 OK")
