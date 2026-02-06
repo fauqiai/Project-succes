@@ -18,8 +18,8 @@ import pandas as pd
 import numpy as np
 
 # ✅ IMPORT SAFE
-from backtest.behavior_core.strategy_finder import find_best_strategies
-from backtest.behavior_core.expectancy import compute_excursions
+from behavior_core.strategy_finder import find_best_strategies
+from behavior_core.expectancy import compute_excursions
 
 
 # ============================================================
