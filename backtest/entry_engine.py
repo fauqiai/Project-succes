@@ -1,40 +1,22 @@
 """
 entry_engine.py
-Behavior-Based Trade Executor (FINAL)
+TRUE Quant Execution Engine
 
-NO ATR
-NO RR
-NO GUESSING
-
-Uses:
-- Strategy Finder
-- Expectancy (MFE/MAE)
-- Transitions (optional ready)
-
-Builds Trade Blueprint.
+- Direct sync with Strategy Finder
+- No manual candle logic
+- Behavior driven entries
 """
 
-import pandas as pd
 import numpy as np
 
-# ✅ IMPORT SAFE
 from behavior_core.strategy_finder import find_best_strategies
-from behavior_core.expectancy import compute_excursions
 
 
 # ============================================================
-# 1. SIGNAL OBJECT
+# SIGNAL OBJECT
 # ============================================================
 
-def create_signal(
-        index,
-        signal_type,
-        entry,
-        sl,
-        tp,
-        strategy,
-        confidence,
-        expected_move):
+def create_signal(index, signal_type, entry, sl, tp, strategy, confidence):
 
     return {
         "index": index,
@@ -44,104 +26,69 @@ def create_signal(
         "tp": float(tp),
         "strategy": strategy,
         "confidence": float(confidence),
-        "expected_move": float(expected_move)
     }
 
 
 # ============================================================
-# 2. BUILD SL / TP FROM BEHAVIOR
+# BUILD LEVELS FROM EXPECTANCY
 # ============================================================
 
 def build_trade_levels(entry, avg_up, avg_down, direction):
 
     if direction == "BUY":
-
         tp = entry * (1 + avg_up)
-        sl = entry * (1 - avg_down * 1.1)  # wick buffer
+        sl = entry * (1 - avg_down * 1.2)
 
     else:
-
         tp = entry * (1 - avg_up)
-        sl = entry * (1 + avg_down * 1.1)
+        sl = entry * (1 + avg_down * 1.2)
 
     return sl, tp
 
 
 # ============================================================
-# 3. STRATEGY → ENTRY
-# (NO ATR, PURE BEHAVIOR)
+# STRATEGY → MASK (SUPER IMPORTANT)
 # ============================================================
 
-def detect_entries(data, strategy_name, strategy_stats):
+def build_mask_from_strategy(data, strategy_name):
 
-    signals = []
+    regime = data["regime"]
 
-    avg_up = strategy_stats["avg_up_move"]
-    avg_down = strategy_stats["avg_down_move"]
-    winrate = strategy_stats["winrate"]
+    impulse = data["impulse"]
+    retracement = data["retracement"]
+    consolidation = data["consolidation"]
 
-    confidence = winrate  # transition bisa ditambah nanti
+    bullish = data["close"] > data["open"]
+    bearish = data["close"] < data["open"]
 
-    for i in range(1, len(data)):
+    if strategy_name == "trend_impulse_buy":
+        return impulse & (regime == "trend") & bullish
 
-        open_price = data["open"].iloc[i]
-        close_price = data["close"].iloc[i]
+    if strategy_name == "trend_impulse_sell":
+        return impulse & (regime == "trend") & bearish
 
-        signal_type = None
+    if strategy_name == "range_retrace_buy":
+        return retracement & (regime == "range") & bullish
 
-        # SAME RULES as strategy finder
-        if strategy_name == "bullish_candle":
-            if close_price > open_price:
-                signal_type = "BUY"
+    if strategy_name == "range_retrace_sell":
+        return retracement & (regime == "range") & bearish
 
-        elif strategy_name == "bearish_candle":
-            if close_price < open_price:
-                signal_type = "SELL"
+    if strategy_name == "breakout_buy":
+        return consolidation & bullish
 
-        elif strategy_name == "large_range":
-            if (data["high"].iloc[i] - data["low"].iloc[i]) > \
-               ((data["high"].iloc[i] - data["low"].iloc[i]) * 0.7):
-                signal_type = "BUY"
+    if strategy_name == "breakout_sell":
+        return consolidation & bearish
 
-        elif strategy_name == "small_body":
-            if abs(close_price - open_price) < \
-               ((data["high"].iloc[i] - data["low"].iloc[i]) * 0.3):
-                signal_type = "BUY"
-
-        if signal_type:
-
-            entry = close_price
-
-            sl, tp = build_trade_levels(
-                entry,
-                avg_up,
-                avg_down,
-                signal_type
-            )
-
-            signals.append(
-                create_signal(
-                    index=i,
-                    signal_type=signal_type,
-                    entry=entry,
-                    sl=sl,
-                    tp=tp,
-                    strategy=strategy_name,
-                    confidence=confidence,
-                    expected_move=avg_up
-                )
-            )
-
-    return signals
+    return None
 
 
 # ============================================================
-# 4. MAIN GENERATOR
+# GENERATE TRUE QUANT ENTRIES
 # ============================================================
 
 def generate_entry_signals(data):
 
-    print("Scanning market with behavior engine...")
+    print("Running TRUE quant execution...")
 
     best = find_best_strategies(data)
 
@@ -151,133 +98,43 @@ def generate_entry_signals(data):
 
     strategy_name, stats = best[0]
 
-    print(f"Selected strategy: {strategy_name}")
-    print(f"Expected move: {round(stats['avg_up_move']*100, 3)}%")
+    print("SELECTED STRATEGY:", strategy_name)
 
-    signals = detect_entries(
-        data,
-        strategy_name,
-        stats
-    )
+    mask = build_mask_from_strategy(data, strategy_name)
 
-    print(f"Generated {len(signals)} trade blueprints.")
-
-    return signals
-
-
-# ============================================================
-# 5. TO DATAFRAME
-# ============================================================
-
-def signals_to_dataframe(signals):
-
-    if not signals:
-        return pd.DataFrame()
-
-    return pd.DataFrame(signals)
-
-
-# ============================================================
-# 6. QUICK STATS
-# ============================================================
-
-def entry_summary(signals):
-
-    if not signals:
-        return {"total": 0}
-
-    df = signals_to_dataframe(signals)
-
-    return {
-        "total_signals": len(df),
-        "buy_signals": int((df["type"] == "BUY").sum()),
-        "sell_signals": int((df["type"] == "SELL").sum()),
-        "avg_confidence": round(df["confidence"].mean(), 3)
-    }
-
-
-# ============================================================
-# QUANT DECISION ENGINE (FROM REPORT)
-# ============================================================
-
-def quant_decision(row):
-    """
-    Mengubah behavior menjadi keputusan BUY / SELL.
-    Berdasarkan hasil Quant Report:
-    - Bearish candle = edge tertinggi
-    """
-
-    open_price = row["open"]
-    close_price = row["close"]
-
-    body = close_price - open_price
-
-    # ===== PRIORITY EDGE =====
-    # Bearish candle -> SELL
-    if body < 0:
-        return {
-            "type": "SELL",
-            "confidence": 0.55,   # dari winrate ~51-53%
-        }
-
-    # Bullish -> BUY tapi confidence lebih kecil
-    if body > 0:
-        return {
-            "type": "BUY",
-            "confidence": 0.51,
-        }
-
-    return None
-
-
-# ============================================================
-# GENERATE SIGNALS FROM QUANT
-# ============================================================
-
-def generate_quant_signals(data):
+    indices = np.where(mask)[0]
 
     signals = []
 
-    for i in range(len(data)):
+    avg_up = stats["avg_up_move"]
+    avg_down = stats["avg_down_move"]
+    confidence = stats["winrate"]
 
-        decision = quant_decision(data.iloc[i])
+    direction = "BUY" if "buy" in strategy_name else "SELL"
 
-        if decision is None:
-            continue
+    for i in indices:
 
-        signals.append({
-            "index": i,
-            "price": data.iloc[i]["close"],
-            "type": decision["type"],
-            "confidence": decision["confidence"]
-        })
+        entry = data["close"].iloc[i]
+
+        sl, tp = build_trade_levels(
+            entry,
+            avg_up,
+            avg_down,
+            direction
+        )
+
+        signals.append(
+            create_signal(
+                index=i,
+                signal_type=direction,
+                entry=entry,
+                sl=sl,
+                tp=tp,
+                strategy=strategy_name,
+                confidence=confidence
+            )
+        )
+
+    print(f"Generated {len(signals)} quant entries.")
 
     return signals
-
-
-# ============================================================
-# SELF TEST (SAFE — NO VISUALIZER)
-# ============================================================
-
-if __name__ == "__main__":
-
-    print("Running Entry Engine self test...")
-
-    np.random.seed(42)
-    size = 400
-
-    price = np.cumsum(np.random.randn(size)) + 100
-
-    df = pd.DataFrame({
-        "open": price + np.random.randn(size) * 0.1,
-        "high": price + np.random.rand(size),
-        "low": price - np.random.rand(size),
-        "close": price + np.random.randn(size) * 0.1,
-    })
-
-    signals = generate_entry_signals(df)
-
-    print("\nEntry summary:")
-    print(entry_summary(signals))
-
-    print("\nEntry Engine OK ✅")
