@@ -1,10 +1,10 @@
 """
 strategy_finder.py
-Strategy Finder V3 (STABLE)
+Strategy Finder V3 (FULL FIX - Expectancy V3 Compatible)
 
-Behavior + Regime aware.
-No ambiguous numpy.
-Compatible with Expectancy V3.
+- No legacy indices
+- No dict excursions
+- Fully aligned with compute_excursions()
 """
 
 import pandas as pd
@@ -61,7 +61,7 @@ def build_conditions(data):
 
 
 # ============================================================
-# EVALUATE
+# EVALUATE STRATEGY (FIXED)
 # ============================================================
 
 def evaluate_strategy(mask, data, forward_points):
@@ -71,31 +71,43 @@ def evaluate_strategy(mask, data, forward_points):
     if len(indices) < MIN_SAMPLES:
         return None
 
-    excursions = compute_excursions(data, indices, forward_points)
+    # ✅ Expectancy V3 format
+    mfe, mae = compute_excursions(data, forward_points)
 
-    if excursions is None:
+    forward_returns = data["close"].shift(-forward_points)
+    forward_returns = (forward_returns - data["close"]) / data["close"]
+
+    returns = forward_returns.iloc[indices]
+    mfe_vals = mfe.iloc[indices]
+    mae_vals = mae.iloc[indices]
+
+    wins = returns[returns > 0]
+    losses = returns[returns <= 0]
+
+    if len(returns) == 0:
         return None
 
-    avg_up = excursions["avg_up"]
-    avg_down = excursions["avg_down"]
-    winrate = excursions["winrate"]
-
-    EV = (avg_up * winrate) - (avg_down * (1 - winrate))
+    winrate = len(wins) / len(returns)
 
     if winrate < MIN_WINRATE:
         return None
 
+    avg_win = wins.mean() if len(wins) else 0
+    avg_loss = abs(losses.mean()) if len(losses) else 0
+
+    EV = (winrate * avg_win) - ((1 - winrate) * avg_loss)
+
     return {
         "EV": float(EV),
-        "avg_up_move": float(avg_up),
-        "avg_down_move": float(avg_down),
+        "avg_up_move": float(mfe_vals.mean()),
+        "avg_down_move": float(abs(mae_vals.mean())),
         "winrate": float(winrate),
         "samples": int(len(indices))
     }
 
 
 # ============================================================
-# FINDER
+# FIND BEST STRATEGIES
 # ============================================================
 
 def find_best_strategies(data, forward_points=10):
