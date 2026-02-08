@@ -13,12 +13,14 @@ from interpreter_engine import (
     print_interpretation
 )
 
-# NEW
 from direction_engine import (
     compute_direction,
     interpret_direction,
     pressure_regime
 )
+
+# NEW
+from risk_engine import build_risk_model
 
 
 def load_csv_data(path):
@@ -73,7 +75,7 @@ def run():
     print(f"BOT: {msg}")
 
     # =============================
-    # 🔥 DIRECTION ENGINE
+    # DIRECTION
     # =============================
 
     direction_score = compute_direction(features)
@@ -86,6 +88,22 @@ def run():
     print("Bias:", bias)
     print("Confidence:", round(confidence, 3))
     print("Market Pressure:", regime)
+
+    # =============================
+    # 🔥 RISK ENGINE
+    # =============================
+
+    risk = build_risk_model(
+        features,
+        confidence,
+        regime,
+        account_size=10000,
+        base_risk=0.01
+    )
+
+    print("\n💰 RISK ENGINE:")
+    for k, v in risk.items():
+        print(f"{k}: {v}")
 
     print("\n🔥 TRANSITIONS:")
     print(transition_matrix(state))
