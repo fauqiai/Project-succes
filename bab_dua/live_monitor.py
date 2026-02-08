@@ -26,7 +26,7 @@ from execution_engine import execution_decision, execution_style
 # SETTINGS
 # =====================================
 
-CSV_PATH = "xauusd_m1_cleaned.csv"
+CSV_PATH = "xauusd_live.csv"
 
 WINDOW = 1200        # last candles to analyze
 SLEEP_SECONDS = 60   # check every 1 minute
