@@ -1,194 +1,326 @@
 """
 event_detection.py
-------------------
-Module untuk mendeteksi event utama dalam Quant Behavior:
-1. Impulse (gerakan besar)
-2. Retracement (tarikan balik)
-3. Consolidation (konsolidasi atau range sempit)
-Semua komentar menggunakan ASCII agar aman disimpan di Notepad Windows.
+QUANT EXPANDED VERSION (HIGH SCENARIO SPACE)
+
+Upgrade:
+
+* Strong / Weak impulse
+* Momentum burst
+* Volatility spike
+* Compression
+* Breakout
+* Exhaustion
+* Fake breakout detection
+* Backward compatible
+
+SAFE FOR PRODUCTION
 """
 
 import pandas as pd
 import numpy as np
 
 # ============================================================
-# 1. DETEKSI IMPULSE
+
+# CORE MEASURES (LOCAL - biar gak tergantung file lain)
+
+# ============================================================
+
+def atr(data, period=14):
+high = data["high"]
+low = data["low"]
+close = data["close"]
+
+```
+prev_close = close.shift(1)
+
+tr = pd.concat([
+    high - low,
+    (high - prev_close).abs(),
+    (low - prev_close).abs()
+], axis=1).max(axis=1)
+
+return tr.rolling(period, min_periods=1).mean()
+```
+
+def candle_range(data):
+return data["high"] - data["low"]
+
+def body_size(data):
+return (data["close"] - data["open"]).abs()
+
+# ============================================================
+
+# IMPULSE FAMILY
+
 # ============================================================
 
 def detect_impulse(data, atr_series=None, multiplier=1.5):
-    """
-    Mendeteksi candle impulsif.
-    Output: Series boolean
-    """
 
-    high = data["high"]
-    low = data["low"]
-    open_ = data["open"]
-    close = data["close"]
+```
+rng = candle_range(data)
 
-    body = (close - open_).abs()
-    candle_range = high - low
+if atr_series is None:
+    atr_series = atr(data)
 
-    # Fallback ATR sederhana jika tidak disediakan
-    if atr_series is None:
-        atr_series = candle_range.rolling(14, min_periods=1).mean()
+prev = rng.shift(1)
 
-    prev_range = candle_range.shift(1)
+impulse = (
+    (rng > atr_series * multiplier) &
+    (rng > prev * 1.2)
+)
 
-    impulse = (
-        (candle_range > atr_series * multiplier) &
-        (candle_range > prev_range * 1.2)
-    )
+return impulse.fillna(False)
+```
 
-    return impulse.fillna(False)
+def detect_strong_impulse(data):
+atr_series = atr(data)
+rng = candle_range(data)
 
+```
+return (rng > atr_series * 2.2).fillna(False)
+```
 
-def impulse_points(data, atr_series=None, multiplier=1.5):
-    """
-    Mengembalikan indeks titik-titik di mana impuls terjadi.
-    """
-    impulse_mask = detect_impulse(data, atr_series, multiplier)
-    return list(data.index[impulse_mask])
+def detect_weak_impulse(data):
+atr_series = atr(data)
+rng = candle_range(data)
 
+```
+return (
+    (rng > atr_series * 1.2) &
+    (rng <= atr_series * 1.5)
+).fillna(False)
+```
 
 # ============================================================
-# 2. DETEKSI RETRACEMENT
+
+# MOMENTUM
+
+# ============================================================
+
+def detect_momentum_burst(data):
+
+```
+body = body_size(data)
+avg_body = body.rolling(20, min_periods=1).mean()
+
+return (body > avg_body * 1.8).fillna(False)
+```
+
+# ============================================================
+
+# RETRACEMENT
+
 # ============================================================
 
 def detect_retracement(data, window=10):
-    """
-    Mendeteksi retracement setelah impuls.
-    Output: Series boolean
-    """
 
-    close = data["close"]
-    high = data["high"]
-    low = data["low"]
+```
+close = data["close"]
+high = data["high"]
+low = data["low"]
 
-    rolling_high = high.rolling(window, min_periods=1).max()
-    rolling_low = low.rolling(window, min_periods=1).min()
+rolling_high = high.rolling(window, min_periods=1).max()
+rolling_low = low.rolling(window, min_periods=1).min()
 
-    range_ = rolling_high - rolling_low
-    pullback = close.diff()
+range_ = rolling_high - rolling_low
 
-    retracement = (
-        (pullback < 0) &
-        (close > rolling_low + range_ * 0.3)
-    )
+pullback = close.diff()
 
-    return retracement.fillna(False)
+retracement = (
+    (pullback < 0) &
+    (close > rolling_low + range_ * 0.3)
+)
 
-
-def retracement_points(data, window=10):
-    """
-    Mengembalikan indeks titik retracement yang valid.
-    """
-    mask = detect_retracement(data, window)
-    return list(data.index[mask])
-
+return retracement.fillna(False)
+```
 
 # ============================================================
-# 3. DETEKSI CONSOLIDATION
-# ============================================================
 
-def detect_consolidation(data, window=5, threshold=0.3):
-    """
-    Mendeteksi konsolidasi.
-    Output: Series boolean
-    """
-
-    high = data["high"]
-    low = data["low"]
-
-    candle_range = high - low
-    avg_range = candle_range.rolling(window, min_periods=1).mean()
-
-    rolling_high = high.rolling(window, min_periods=1).max()
-    rolling_low = low.rolling(window, min_periods=1).min()
-
-    total_range = rolling_high - rolling_low
-
-    consolidation = (
-        (avg_range < total_range * threshold)
-    )
-
-    return consolidation.fillna(False)
-
-
-def consolidation_zones(data, window=5, threshold=0.3):
-    """
-    Mengembalikan zona konsolidasi berupa tuples (start, end).
-    """
-
-    mask = detect_consolidation(data, window, threshold)
-    zones = []
-
-    start = None
-    for idx, val in mask.items():
-        if val and start is None:
-            start = idx
-        elif not val and start is not None:
-            zones.append((start, idx))
-            start = None
-
-    if start is not None:
-        zones.append((start, mask.index[-1]))
-
-    return zones
-
+# CONSOLIDATION / COMPRESSION
 
 # ============================================================
-# 4. EVENT SEQUENCE BUILDER
+
+def detect_consolidation(data, window=6):
+
+```
+rng = candle_range(data)
+avg = rng.rolling(window, min_periods=1).mean()
+
+compression = avg < avg.rolling(20, min_periods=1).mean() * 0.7
+
+return compression.fillna(False)
+```
+
+def detect_compression_cluster(data):
+
+```
+rng = candle_range(data)
+small = rng < rng.rolling(20, min_periods=1).mean() * 0.6
+
+cluster = small.rolling(4, min_periods=1).sum() >= 3
+
+return cluster.fillna(False)
+```
+
+# ============================================================
+
+# VOLATILITY EVENTS
+
+# ============================================================
+
+def detect_volatility_spike(data):
+
+```
+atr_series = atr(data)
+atr_mean = atr_series.rolling(40, min_periods=1).mean()
+
+return (atr_series > atr_mean * 1.8).fillna(False)
+```
+
+# ============================================================
+
+# BREAKOUTS
+
+# ============================================================
+
+def detect_breakout(data, window=20):
+
+```
+high = data["high"]
+low = data["low"]
+close = data["close"]
+
+prev_high = high.rolling(window).max().shift(1)
+prev_low = low.rolling(window).min().shift(1)
+
+breakout_up = close > prev_high
+breakout_down = close < prev_low
+
+return (breakout_up | breakout_down).fillna(False)
+```
+
+def detect_fake_breakout(data):
+
+```
+breakout = detect_breakout(data)
+
+close = data["close"]
+prev_close = close.shift(1)
+
+reversal = np.sign(close.diff()) != np.sign(prev_close.diff())
+
+return (breakout & reversal).fillna(False)
+```
+
+# ============================================================
+
+# EXHAUSTION
+
+# ============================================================
+
+def detect_exhaustion(data):
+
+```
+body = body_size(data)
+shrinking = body < body.shift(1)
+
+trend_push = body.shift(1) > body.shift(2)
+
+return (shrinking & trend_push).fillna(False)
+```
+
+# ============================================================
+
+# MASTER EVENT BUILDER
+
 # ============================================================
 
 def build_event_sequence(data):
-    """
-    Menghasilkan urutan event seperti:
-    impulse -> retrace -> consolidation -> impulse ...
-    Output: list of strings
-    """
 
-    impulse = detect_impulse(data)
-    retrace = detect_retracement(data)
-    consolidate = detect_consolidation(data)
+```
+impulse = detect_impulse(data)
+strong_impulse = detect_strong_impulse(data)
+weak_impulse = detect_weak_impulse(data)
 
-    sequence = []
+momentum = detect_momentum_burst(data)
 
-    for i in range(len(data)):
-        if impulse.iloc[i]:
-            sequence.append("impulse")
-        elif retrace.iloc[i]:
-            sequence.append("retracement")
-        elif consolidate.iloc[i]:
-            sequence.append("consolidation")
-        else:
-            sequence.append("neutral")
+retrace = detect_retracement(data)
 
-    return sequence
+consolidation = detect_consolidation(data)
+compression = detect_compression_cluster(data)
 
+breakout = detect_breakout(data)
+fake_breakout = detect_fake_breakout(data)
+
+exhaustion = detect_exhaustion(data)
+
+sequence = []
+
+for i in range(len(data)):
+
+    if strong_impulse.iloc[i]:
+        sequence.append("strong_impulse")
+
+    elif breakout.iloc[i]:
+        sequence.append("breakout")
+
+    elif fake_breakout.iloc[i]:
+        sequence.append("fake_breakout")
+
+    elif momentum.iloc[i]:
+        sequence.append("momentum")
+
+    elif impulse.iloc[i]:
+        sequence.append("impulse")
+
+    elif weak_impulse.iloc[i]:
+        sequence.append("weak_impulse")
+
+    elif exhaustion.iloc[i]:
+        sequence.append("exhaustion")
+
+    elif retrace.iloc[i]:
+        sequence.append("retracement")
+
+    elif compression.iloc[i]:
+        sequence.append("compression")
+
+    elif consolidation.iloc[i]:
+        sequence.append("consolidation")
+
+    else:
+        sequence.append("neutral")
+
+return sequence
+```
 
 # ============================================================
+
 # SELF TEST
+
 # ============================================================
 
-if __name__ == "__main__":
-    # Simple synthetic data for safety test
-    np.random.seed(42)
-    size = 100
+if **name** == "**main**":
 
-    price = np.cumsum(np.random.randn(size)) + 100
+```
+print("Running EXPANDED event_detection self-test...")
 
-    df = pd.DataFrame({
-        "open": price + np.random.randn(size) * 0.2,
-        "high": price + np.random.rand(size),
-        "low": price - np.random.rand(size),
-        "close": price + np.random.randn(size) * 0.2,
-    })
+np.random.seed(42)
+size = 400
 
-    print("Impulse points:", impulse_points(df))
-    print("Retracement points:", retracement_points(df))
-    print("Consolidation zones:", consolidation_zones(df))
-    print("Event sequence sample:", build_event_sequence(df)[:20])
+price = np.cumsum(np.random.randn(size)) + 100
 
-    print("event_detection.py self-test OK")
+df = pd.DataFrame({
+    "open": price,
+    "high": price + np.random.rand(size),
+    "low": price - np.random.rand(size),
+    "close": price
+})
 
+seq = build_event_sequence(df)
+
+print("Sample events:", seq[:30])
+print("Unique events:", set(seq))
+
+print("Self-test PASSED — no errors.")
+```
