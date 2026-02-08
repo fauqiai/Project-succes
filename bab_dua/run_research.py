@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 
 from core.feature_engine import build_feature_matrix
@@ -9,45 +8,102 @@ from core.transition_engine import transition_matrix, transition_expectancy
 from core.expectancy_engine import state_edge
 
 
-def generate_data(size=6000):
+# ======================================
+# CSV LOADER (PRO VERSION)
+# ======================================
 
-    np.random.seed(42)
+def load_csv_data(path):
 
-    price = np.cumsum(np.random.randn(size)) + 100
+    print("\nLoading CSV data...")
 
-    return pd.DataFrame({
-        "open": price,
-        "high": price + np.random.rand(size),
-        "low": price - np.random.rand(size),
-        "close": price
-    })
+    df = pd.read_csv(path)
 
+    # Normalize column names
+    df.columns = df.columns.str.lower().str.strip()
+
+    required_cols = ["open", "high", "low", "close"]
+
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(
+                f"\nCSV ERROR → Missing column: '{col}'\n"
+                f"Columns found: {list(df.columns)}"
+            )
+
+    df = df[required_cols].copy()
+
+    df = df.dropna()
+
+    print(f"✅ Loaded {len(df):,} rows")
+
+    if len(df) < 5000:
+        print("⚠️ WARNING: Dataset kecil — clustering kurang optimal.")
+
+    print(df.head())
+
+    return df
+
+
+# ======================================
+# ENGINE RUNNER
+# ======================================
 
 def run():
 
-    print("\n🔥 RUNNING ULTRA EDGE ENGINE\n")
+    print("\n🔥 RUNNING ULTRA EDGE ENGINE (REAL DATA)\n")
 
-    df = generate_data()
+    # 👉 GANTI NAMA FILE DI SINI kalau beda
+    df = load_csv_data("xauusd_m1_cleaned.csv")
 
+    # =========================
+    # BUILD FEATURES
+    # =========================
+    print("\nBuilding features...")
     features = build_feature_matrix(df)
+
+    # =========================
+    # REGIME
+    # =========================
+    print("Building regimes...")
     regimes = build_regime_matrix(df)
 
+    # =========================
+    # INTERACTIONS (EDGE BOOSTER)
+    # =========================
+    print("Building feature interactions...")
     interactions = build_interactions(features)
+
     features = pd.concat([features, interactions], axis=1)
 
+    # =========================
+    # STATE SPACE
+    # =========================
+    print("Clustering market states...")
+
     state, scaled, _ = build_state_matrix(features, regimes)
+
+    # 🔥 cluster 8 = sweet spot
     state, _ = cluster_states(state, scaled, k=8)
 
-    print("\nTOP STATES:")
-    print(state_edge(df, state).head())
+    # =========================
+    # EDGE TABLE
+    # =========================
+    print("\n🔥 TOP STATES (EDGE):")
+    print(state_edge(df, state).head(10))
 
-    print("\nTRANSITIONS:")
+    # =========================
+    # TRANSITIONS
+    # =========================
+    print("\n🔥 TRANSITION MATRIX:")
     print(transition_matrix(state))
 
-    print("\nTRANSITION EXPECTANCY:")
-    print(transition_expectancy(df, state).head())
+    # =========================
+    # TRANSITION EXPECTANCY
+    # =========================
+    print("\n🔥 TRANSITION EXPECTANCY:")
+    print(transition_expectancy(df, state).head(10))
 
-    print("\n✅ RESEARCH COMPLETE")
+    print("\n✅ RESEARCH COMPLETE\n")
 
 
 if __name__ == "__main__":
