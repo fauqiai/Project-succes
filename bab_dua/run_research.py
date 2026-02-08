@@ -7,17 +7,19 @@ from core.interaction_engine import build_interactions
 from core.transition_engine import transition_matrix, transition_expectancy
 from core.expectancy_engine import state_edge
 
-# 👉 interpreter di luar core
 from interpreter_engine import (
     interpret_states,
     interpret_current_state,
     print_interpretation
 )
 
+# NEW
+from direction_engine import (
+    compute_direction,
+    interpret_direction,
+    pressure_regime
+)
 
-# ======================================
-# CSV LOADER
-# ======================================
 
 def load_csv_data(path):
 
@@ -29,73 +31,63 @@ def load_csv_data(path):
 
     required_cols = ["open", "high", "low", "close"]
 
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(
-                f"\nCSV ERROR → Missing column: '{col}'\n"
-                f"Columns found: {list(df.columns)}"
-            )
-
-    df = df[required_cols].copy()
-    df = df.dropna()
+    df = df[required_cols].dropna()
 
     print(f"✅ Loaded {len(df):,} rows")
-
-    if len(df) < 5000:
-        print("⚠️ WARNING: Dataset kecil — clustering kurang optimal.")
-
-    print(df.head())
 
     return df
 
 
-# ======================================
-# ENGINE
-# ======================================
-
 def run():
 
-    print("\n🔥 RUNNING ULTRA EDGE ENGINE (REAL DATA)\n")
+    print("\n🔥 RUNNING ULTRA EDGE ENGINE\n")
 
     df = load_csv_data("xauusd_m1_cleaned.csv")
 
-    # FEATURES
     print("\nBuilding features...")
     features = build_feature_matrix(df)
 
-    # REGIME
     print("Building regimes...")
     regimes = build_regime_matrix(df)
 
-    # INTERACTIONS
-    print("Building feature interactions...")
+    print("Building interactions...")
     interactions = build_interactions(features)
 
     features = pd.concat([features, interactions], axis=1)
 
-    # STATE SPACE
-    print("Clustering market states...")
+    print("Clustering states...")
     state, scaled, _ = build_state_matrix(features, regimes)
     state, _ = cluster_states(state, scaled, k=8)
 
-    # EDGE TABLE
     edge_table = state_edge(df, state)
 
-    print("\n🔥 TOP STATES (EDGE):")
+    print("\n🔥 TOP STATES:")
     print(edge_table.head(10))
 
-    # 🔥 INTERPRETER
     interpretation = interpret_states(edge_table)
-
     print_interpretation(interpretation)
 
     cluster, msg = interpret_current_state(state, interpretation)
 
-    print(f"\n📍 CURRENT MARKET STATE → Cluster {cluster}")
-    print(f"📢 BOT SAYS: {msg}")
+    print(f"\n📍 CURRENT STATE → Cluster {cluster}")
+    print(f"BOT: {msg}")
 
-    # TRANSITIONS
-    print("\n🔥 TRANSITION MATRIX:")
+    # =============================
+    # 🔥 DIRECTION ENGINE
+    # =============================
+
+    direction_score = compute_direction(features)
+
+    bias, confidence = interpret_direction(direction_score)
+
+    regime = pressure_regime(features)
+
+    print("\n🧭 DIRECTION ENGINE:")
+    print("Bias:", bias)
+    print("Confidence:", round(confidence, 3))
+    print("Market Pressure:", regime)
+
+    print("\n🔥 TRANSITIONS:")
     print(transition_matrix(state))
 
     print("\n🔥 TRANSITION EXPECTANCY:")
