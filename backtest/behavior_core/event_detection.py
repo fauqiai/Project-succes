@@ -26,9 +26,9 @@ import numpy as np
 # ============================================================
 
 def atr(data, period=14):
-high = data["high"]
-low = data["low"]
-close = data["close"]
+    high = data["high"]
+    low = data["low"]
+    close = data["close"]
 
 ```
 prev_close = close.shift(1)
