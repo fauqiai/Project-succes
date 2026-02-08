@@ -19,8 +19,13 @@ from direction_engine import (
     pressure_regime
 )
 
-# NEW
 from risk_engine import build_risk_model
+
+# NEW
+from execution_engine import (
+    execution_decision,
+    execution_style
+)
 
 
 def load_csv_data(path):
@@ -31,9 +36,7 @@ def load_csv_data(path):
 
     df.columns = df.columns.str.lower().str.strip()
 
-    required_cols = ["open", "high", "low", "close"]
-
-    df = df[required_cols].dropna()
+    df = df[["open", "high", "low", "close"]].dropna()
 
     print(f"✅ Loaded {len(df):,} rows")
 
@@ -42,9 +45,13 @@ def load_csv_data(path):
 
 def run():
 
-    print("\n🔥 RUNNING ULTRA EDGE ENGINE\n")
+    print("\n🔥 RUNNING ULTRA QUANT ENGINE\n")
 
     df = load_csv_data("xauusd_m1_cleaned.csv")
+
+    # =============================
+    # BUILD PIPELINE
+    # =============================
 
     print("\nBuilding features...")
     features = build_feature_matrix(df)
@@ -69,28 +76,29 @@ def run():
     interpretation = interpret_states(edge_table)
     print_interpretation(interpretation)
 
-    cluster, msg = interpret_current_state(state, interpretation)
+    cluster, state_label = interpret_current_state(
+        state,
+        interpretation
+    )
 
     print(f"\n📍 CURRENT STATE → Cluster {cluster}")
-    print(f"BOT: {msg}")
+    print(f"BOT: {state_label}")
 
     # =============================
     # DIRECTION
     # =============================
 
     direction_score = compute_direction(features)
-
     bias, confidence = interpret_direction(direction_score)
-
     regime = pressure_regime(features)
 
-    print("\n🧭 DIRECTION ENGINE:")
+    print("\n🧭 DIRECTION:")
     print("Bias:", bias)
     print("Confidence:", round(confidence, 3))
     print("Market Pressure:", regime)
 
     # =============================
-    # 🔥 RISK ENGINE
+    # RISK
     # =============================
 
     risk = build_risk_model(
@@ -101,17 +109,36 @@ def run():
         base_risk=0.01
     )
 
-    print("\n💰 RISK ENGINE:")
+    print("\n💰 RISK MODEL:")
     for k, v in risk.items():
         print(f"{k}: {v}")
 
+    # =============================
+    # 🔥 EXECUTION
+    # =============================
+
+    decision, reason = execution_decision(
+        state_label,
+        bias,
+        confidence,
+        regime
+    )
+
+    style = execution_style(confidence)
+
+    print("\n🎯 EXECUTION ENGINE:")
+    print("Decision:", decision)
+    print("Reason:", reason)
+    print("Position Style:", style)
+
+    # =============================
     print("\n🔥 TRANSITIONS:")
     print(transition_matrix(state))
 
     print("\n🔥 TRANSITION EXPECTANCY:")
     print(transition_expectancy(df, state).head(10))
 
-    print("\n✅ RESEARCH COMPLETE\n")
+    print("\n✅ ULTRA ENGINE COMPLETE\n")
 
 
 if __name__ == "__main__":
