@@ -7,9 +7,16 @@ from core.interaction_engine import build_interactions
 from core.transition_engine import transition_matrix, transition_expectancy
 from core.expectancy_engine import state_edge
 
+# 👉 interpreter di luar core
+from interpreter_engine import (
+    interpret_states,
+    interpret_current_state,
+    print_interpretation
+)
+
 
 # ======================================
-# CSV LOADER (PRO VERSION)
+# CSV LOADER
 # ======================================
 
 def load_csv_data(path):
@@ -18,7 +25,6 @@ def load_csv_data(path):
 
     df = pd.read_csv(path)
 
-    # Normalize column names
     df.columns = df.columns.str.lower().str.strip()
 
     required_cols = ["open", "high", "low", "close"]
@@ -31,7 +37,6 @@ def load_csv_data(path):
             )
 
     df = df[required_cols].copy()
-
     df = df.dropna()
 
     print(f"✅ Loaded {len(df):,} rows")
@@ -45,61 +50,54 @@ def load_csv_data(path):
 
 
 # ======================================
-# ENGINE RUNNER
+# ENGINE
 # ======================================
 
 def run():
 
     print("\n🔥 RUNNING ULTRA EDGE ENGINE (REAL DATA)\n")
 
-    # 👉 GANTI NAMA FILE DI SINI kalau beda
     df = load_csv_data("xauusd_m1_cleaned.csv")
 
-    # =========================
-    # BUILD FEATURES
-    # =========================
+    # FEATURES
     print("\nBuilding features...")
     features = build_feature_matrix(df)
 
-    # =========================
     # REGIME
-    # =========================
     print("Building regimes...")
     regimes = build_regime_matrix(df)
 
-    # =========================
-    # INTERACTIONS (EDGE BOOSTER)
-    # =========================
+    # INTERACTIONS
     print("Building feature interactions...")
     interactions = build_interactions(features)
 
     features = pd.concat([features, interactions], axis=1)
 
-    # =========================
     # STATE SPACE
-    # =========================
     print("Clustering market states...")
-
     state, scaled, _ = build_state_matrix(features, regimes)
-
-    # 🔥 cluster 8 = sweet spot
     state, _ = cluster_states(state, scaled, k=8)
 
-    # =========================
     # EDGE TABLE
-    # =========================
-    print("\n🔥 TOP STATES (EDGE):")
-    print(state_edge(df, state).head(10))
+    edge_table = state_edge(df, state)
 
-    # =========================
+    print("\n🔥 TOP STATES (EDGE):")
+    print(edge_table.head(10))
+
+    # 🔥 INTERPRETER
+    interpretation = interpret_states(edge_table)
+
+    print_interpretation(interpretation)
+
+    cluster, msg = interpret_current_state(state, interpretation)
+
+    print(f"\n📍 CURRENT MARKET STATE → Cluster {cluster}")
+    print(f"📢 BOT SAYS: {msg}")
+
     # TRANSITIONS
-    # =========================
     print("\n🔥 TRANSITION MATRIX:")
     print(transition_matrix(state))
 
-    # =========================
-    # TRANSITION EXPECTANCY
-    # =========================
     print("\n🔥 TRANSITION EXPECTANCY:")
     print(transition_expectancy(df, state).head(10))
 
