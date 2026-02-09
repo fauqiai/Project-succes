@@ -1,0 +1,175 @@
+import pandas as pd
+import numpy as np
+
+from core.feature_engine import build_feature_matrix
+from core.regime_engine import build_regime_matrix
+from core.state_engine import build_state_matrix, cluster_states
+from core.interaction_engine import build_interactions
+from core.expectancy_engine import state_edge
+
+from interpreter_engine import interpret_states
+from direction_engine import compute_direction, interpret_direction, pressure_regime
+from risk_engine import build_risk_model
+from execution_engine import execution_decision
+from exit_engine import compute_exit
+
+
+
+# ======================================
+# TRADE SIMULATOR
+# ======================================
+
+def simulate_trade(df, i, bias, tp, sl):
+
+    entry = df["close"].iloc[i]
+
+    for j in range(i + 1, len(df)):
+
+        high = df["high"].iloc[j]
+        low = df["low"].iloc[j]
+
+        if bias == "LONG":
+
+            if low <= sl:
+                return sl - entry
+
+            if high >= tp:
+                return tp - entry
+
+        elif bias == "SHORT":
+
+            if high >= sl:
+                return entry - sl
+
+            if low <= tp:
+                return entry - tp
+
+    # kalau gak kena apa2
+    return df["close"].iloc[-1] - entry
+
+
+
+# ======================================
+# BACKTEST ENGINE
+# ======================================
+
+def run_backtest(csv_path):
+
+    print("\n🔥 RUNNING MONSTER BACKTEST\n")
+
+    df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.lower().str.strip()
+    df = df[["open","high","low","close"]].dropna()
+
+    print("Rows:", len(df))
+
+    features = build_feature_matrix(df)
+    regimes = build_regime_matrix(df)
+
+    interactions = build_interactions(features)
+    features = pd.concat([features, interactions], axis=1)
+
+    state, scaled, _ = build_state_matrix(features, regimes)
+    state, _ = cluster_states(state, scaled, k=8)
+
+    edge_table = state_edge(df, state)
+    interpretation = interpret_states(edge_table)
+
+    trades = []
+    equity = 10000
+    equity_curve = []
+
+    for i in range(300, len(df)-50):
+
+        sub_df = df.iloc[:i]
+        sub_features = features.iloc[:i]
+        sub_state = state.iloc[:i]
+
+        state_label = interpretation.get(sub_state.iloc[-1]["cluster"], "AVOID")
+
+        direction_score = compute_direction(sub_features)
+        bias, confidence = interpret_direction(direction_score)
+        regime = pressure_regime(sub_features)
+
+        decision, reason = execution_decision(
+            state_label,
+            bias,
+            confidence,
+            regime
+        )
+
+        if decision != "TRADE":
+            equity_curve.append(equity)
+            continue
+
+        exit_plan = compute_exit(
+            sub_df,
+            sub_features,
+            state_label,
+            bias
+        )
+
+        if exit_plan["tp"] is None:
+            equity_curve.append(equity)
+            continue
+
+        pnl = simulate_trade(
+            df,
+            i,
+            bias,
+            exit_plan["tp"],
+            exit_plan["sl"]
+        )
+
+        risk = build_risk_model(
+            sub_features,
+            confidence,
+            regime,
+            account_size=equity,
+            base_risk=0.01
+        )
+
+        position_size = risk["position_size"]
+
+        profit = pnl * position_size
+        equity += profit
+
+        trades.append(profit)
+        equity_curve.append(equity)
+
+    # =============================
+    # REPORT
+    # =============================
+
+    trades = np.array(trades)
+
+    if len(trades) == 0:
+        print("No trades executed.")
+        return
+
+    winrate = np.mean(trades > 0)
+    avg = np.mean(trades)
+    profit_factor = trades[trades > 0].sum() / abs(trades[trades < 0].sum())
+
+    peak = np.maximum.accumulate(equity_curve)
+    drawdown = (peak - equity_curve) / peak
+    max_dd = drawdown.max()
+
+    print("\n============================")
+    print("🔥 BACKTEST REPORT")
+    print("============================")
+
+    print("Final Equity:", round(equity,2))
+    print("Total Trades:", len(trades))
+    print("Winrate:", round(winrate*100,2),"%")
+    print("Avg Trade:", round(avg,2))
+    print("Profit Factor:", round(profit_factor,2))
+    print("Max Drawdown:", round(max_dd*100,2),"%")
+
+
+
+# ======================================
+
+if __name__ == "__main__":
+
+    run_backtest("xauusd_m1_cleaned.csv")
