@@ -21,37 +21,25 @@ from direction_engine import (
 from risk_engine import build_risk_model
 from execution_engine import execution_decision, execution_style
 
-
-# =====================================
-# SETTINGS
-# =====================================
-
-CSV_PATH = "xauusd_live.csv"
-
-WINDOW = 1200        # last candles to analyze
-SLEEP_SECONDS = 60   # check every 1 minute
+# ✅ NEW
+from exit_engine import compute_exit
 
 
+CSV_PATH = "xauusd_m1_cleaned.csv"
+WINDOW = 1200
+SLEEP_SECONDS = 60
 
-# =====================================
-# LOAD DATA
-# =====================================
 
 def load_latest_data():
 
     df = pd.read_csv(CSV_PATH)
 
     df.columns = df.columns.str.lower().str.strip()
-
     df = df[["open", "high", "low", "close"]].dropna()
 
     return df.tail(WINDOW)
 
 
-
-# =====================================
-# SINGLE LIVE PASS
-# =====================================
 
 def run_live_pass():
 
@@ -96,6 +84,14 @@ def run_live_pass():
 
     style = execution_style(confidence)
 
+    # ✅ EXIT
+    exit_plan = compute_exit(
+        df,
+        features,
+        state_label,
+        bias
+    )
+
     print("\n==============================")
     print("📡 LIVE MARKET SNAPSHOT")
     print("==============================")
@@ -114,12 +110,12 @@ def run_live_pass():
     print("Reason:", reason)
     print("Position:", style)
 
+    print("\n🚪 EXIT PLAN:")
+    for k, v in exit_plan.items():
+        print(f"{k}: {v}")
+
     print("\n⏰ Waiting next candle...")
 
-
-# =====================================
-# LIVE LOOP
-# =====================================
 
 def start_live_monitor():
 
@@ -131,25 +127,18 @@ def start_live_monitor():
         try:
 
             run_live_pass()
-
             time.sleep(SLEEP_SECONDS)
 
         except KeyboardInterrupt:
-
             print("\n🛑 Live monitor stopped.")
             break
 
         except Exception as e:
-
             print("ERROR:", e)
             print("Retrying in 10 seconds...")
             time.sleep(10)
 
 
-
-# =====================================
-# SELF TEST
-# =====================================
 
 if __name__ == "__main__":
 
