@@ -21,11 +21,14 @@ from direction_engine import (
 
 from risk_engine import build_risk_model
 
-# NEW
 from execution_engine import (
     execution_decision,
     execution_style
 )
+
+# ✅ NEW
+from exit_engine import compute_exit
+
 
 
 def load_csv_data(path):
@@ -35,7 +38,6 @@ def load_csv_data(path):
     df = pd.read_csv(path)
 
     df.columns = df.columns.str.lower().str.strip()
-
     df = df[["open", "high", "low", "close"]].dropna()
 
     print(f"✅ Loaded {len(df):,} rows")
@@ -43,15 +45,12 @@ def load_csv_data(path):
     return df
 
 
+
 def run():
 
     print("\n🔥 RUNNING ULTRA QUANT ENGINE\n")
 
     df = load_csv_data("xauusd_m1_cleaned.csv")
-
-    # =============================
-    # BUILD PIPELINE
-    # =============================
 
     print("\nBuilding features...")
     features = build_feature_matrix(df)
@@ -114,7 +113,7 @@ def run():
         print(f"{k}: {v}")
 
     # =============================
-    # 🔥 EXECUTION
+    # EXECUTION
     # =============================
 
     decision, reason = execution_decision(
@@ -132,6 +131,21 @@ def run():
     print("Position Style:", style)
 
     # =============================
+    # 🔥 EXIT ENGINE (NEW)
+    # =============================
+
+    exit_plan = compute_exit(
+        df,
+        features,
+        state_label,
+        bias
+    )
+
+    print("\n🚪 EXIT ENGINE:")
+    for k, v in exit_plan.items():
+        print(f"{k}: {v}")
+
+    # =============================
     print("\n🔥 TRANSITIONS:")
     print(transition_matrix(state))
 
@@ -139,6 +153,7 @@ def run():
     print(transition_expectancy(df, state).head(10))
 
     print("\n✅ ULTRA ENGINE COMPLETE\n")
+
 
 
 if __name__ == "__main__":
