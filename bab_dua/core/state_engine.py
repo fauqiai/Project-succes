@@ -1,45 +1,74 @@
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-# NEW
 from .clustering_engine import cluster
+from .dimensionality_engine import reduce_dim
+from .feature_discovery import discover_features
 
 
 # =====================================
-# BUILD STATE MATRIX
+# BUILD STATE MATRIX (FINAL FORM)
 # =====================================
 
-def build_state_matrix(features, regimes, scaler=None):
+def build_state_matrix(
+    features,
+    regimes,
+    scaler=None,
+    dim_model=None,
+    discovery_model=None
+):
     """
-    Combine features + regimes
-    Scale them for clustering
+    FINAL PIPELINE:
+
+    handcrafted features
+        + discovered features
+        + regimes
+        ↓
+    scale
+        ↓
+    reduce dimension
+        ↓
+    READY for clustering
     """
 
-    state = pd.concat([features, regimes], axis=1).dropna()
+    # 🔥 SCARY PART — auto feature discovery
+    discovered, discovery_model = discover_features(
+        features,
+        model=discovery_model
+    )
 
-    # allow reuse scaler later (live trading future)
+    state = pd.concat([
+        features,
+        discovered,
+        regimes
+    ], axis=1).dropna()
+
+    # reuse scaler for live later
     if scaler is None:
         scaler = StandardScaler()
         scaled = scaler.fit_transform(state)
     else:
         scaled = scaler.transform(state)
 
-    return state, scaled, scaler
+    # dimensionality reduction
+    scaled, dim_model = reduce_dim(
+        scaled,
+        model=dim_model
+    )
+
+    return state, scaled, scaler, dim_model, discovery_model
 
 
 # =====================================
-# CLUSTER STATES (NEW MODULAR)
+# CLUSTER STATES
 # =====================================
 
 def cluster_states(
     state,
     scaled,
-    method="hdbscan",   # "hdbscan", "gmm", "kmeans"
+    method="hdbscan",
     k=8
 ):
-    """
-    Cluster market states using clustering_engine.
-    """
 
     labels, model = cluster(
         scaled,
@@ -58,13 +87,14 @@ def cluster_states(
 
 if __name__ == "__main__":
 
-    print("STATE ENGINE TEST")
+    print("FINAL STATE ENGINE TEST")
 
     import numpy as np
     from .feature_engine import build_feature_matrix
     from .regime_engine import build_regime_matrix
+    from .regime_validator import validate_regimes, regime_health_score
 
-    size = 1500
+    size = 2500
     price = np.cumsum(np.random.randn(size)) + 100
 
     df = pd.DataFrame({
@@ -74,23 +104,24 @@ if __name__ == "__main__":
         "close": price
     })
 
-    # build features
     f = build_feature_matrix(df)
     r = build_regime_matrix(df)
 
-    # build state
-    state, scaled, scaler = build_state_matrix(f, r)
+    state, scaled, scaler, dim_model, discovery_model = build_state_matrix(f, r)
 
-    # cluster
     state, model = cluster_states(
         state,
         scaled,
-        method="hdbscan"   # change to test others
+        method="hdbscan"
     )
 
     print(state.head())
 
-    print("\nClusters:", state["cluster"].nunique())
-    print("Noise points:", (state["cluster"] == -1).sum())
+    report = validate_regimes(df, state)
+
+    print("\nREGIME REPORT:")
+    print(report)
+
+    print("\nHEALTH:", regime_health_score(report))
 
     print("PASSED ✅")
