@@ -1,29 +1,60 @@
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
+
+# NEW
+from .clustering_engine import cluster
 
 
-def build_state_matrix(features, regimes):
+# =====================================
+# BUILD STATE MATRIX
+# =====================================
+
+def build_state_matrix(features, regimes, scaler=None):
+    """
+    Combine features + regimes
+    Scale them for clustering
+    """
 
     state = pd.concat([features, regimes], axis=1).dropna()
 
-    scaler = StandardScaler()
-    scaled = scaler.fit_transform(state)
+    # allow reuse scaler later (live trading future)
+    if scaler is None:
+        scaler = StandardScaler()
+        scaled = scaler.fit_transform(state)
+    else:
+        scaled = scaler.transform(state)
 
     return state, scaled, scaler
 
 
-def cluster_states(state, scaled, k=8):
+# =====================================
+# CLUSTER STATES (NEW MODULAR)
+# =====================================
 
-    model = KMeans(n_clusters=k, n_init=25, random_state=42)
+def cluster_states(
+    state,
+    scaled,
+    method="hdbscan",   # "hdbscan", "gmm", "kmeans"
+    k=8
+):
+    """
+    Cluster market states using clustering_engine.
+    """
 
-    labels = model.fit_predict(scaled)
+    labels, model = cluster(
+        scaled,
+        method=method,
+        k=k
+    )
 
     state["cluster"] = labels
 
     return state, model
 
 
+# =====================================
+# SELF TEST
+# =====================================
 
 if __name__ == "__main__":
 
@@ -33,7 +64,7 @@ if __name__ == "__main__":
     from .feature_engine import build_feature_matrix
     from .regime_engine import build_regime_matrix
 
-    size = 1200
+    size = 1500
     price = np.cumsum(np.random.randn(size)) + 100
 
     df = pd.DataFrame({
@@ -43,12 +74,23 @@ if __name__ == "__main__":
         "close": price
     })
 
+    # build features
     f = build_feature_matrix(df)
     r = build_regime_matrix(df)
 
-    state, scaled, _ = build_state_matrix(f, r)
-    state, _ = cluster_states(state, scaled)
+    # build state
+    state, scaled, scaler = build_state_matrix(f, r)
+
+    # cluster
+    state, model = cluster_states(
+        state,
+        scaled,
+        method="hdbscan"   # change to test others
+    )
 
     print(state.head())
+
+    print("\nClusters:", state["cluster"].nunique())
+    print("Noise points:", (state["cluster"] == -1).sum())
 
     print("PASSED ✅")
