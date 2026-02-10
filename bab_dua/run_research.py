@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-# ================= CORE BRAIN =================
+# ================= CORE =================
 
 from core.feature_engine import build_feature_matrix
 from core.feature_discovery import discover_features
@@ -37,11 +37,11 @@ execution_style
 
 from exit_engine import compute_exit
 
-# ==========================================================
+# ======================================================
 
 # LOAD DATA
 
-# ==========================================================
+# ======================================================
 
 def load_csv_data(path):
 
@@ -58,11 +58,11 @@ print(f"✅ Loaded {len(df):,} rows")
 return df
 ```
 
-# ==========================================================
+# ======================================================
 
-# MAIN RESEARCH PIPELINE
+# MAIN ENGINE
 
-# ==========================================================
+# ======================================================
 
 def run():
 
@@ -89,17 +89,16 @@ features = pd.concat([features, interactions], axis=1)
 print("\nBuilding regimes...")
 regimes = build_regime_matrix(df)
 
-# REGIME SHIFT
 returns = df["close"].pct_change()
 
 shift_series = detect_regime_shift(returns)
 shift_status = regime_shift_alert(shift_series)
 
-print("\n🚨 REGIME SHIFT STATUS:", shift_status)
+print("\n🚨 REGIME SHIFT:", shift_status)
 
-# ================= STATE CLUSTERING =================
+# ================= STATE =================
 
-print("\nClustering market states...")
+print("\nClustering states...")
 state, scaled, _, _, _ = build_state_matrix(features, regimes)
 state, _ = cluster_states(state, scaled, k=8)
 
@@ -110,7 +109,8 @@ edge_table = state_edge(df, state)
 print("\n🔥 TOP STATES:")
 print(edge_table.head(10))
 
-# REGIME VALIDATION
+# ================= REGIME VALIDATION =================
+
 regime_report = validate_regimes(df, state)
 health = regime_health_score(regime_report)
 
