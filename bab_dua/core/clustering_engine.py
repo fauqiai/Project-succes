@@ -16,17 +16,10 @@ except ImportError:
 
 def cluster(
     X,
-    method="hdbscan",   # "hdbscan", "gmm", "kmeans"
+    method="hdbscan",
     k=8,
     random_state=42
 ):
-    """
-    Universal clustering wrapper.
-
-    Returns:
-        labels : np.array
-        model  : fitted clustering object
-    """
 
     if method == "hdbscan":
 
@@ -34,7 +27,16 @@ def cluster(
             print("⚠️ HDBSCAN not installed → fallback to GMM")
             return _gmm_cluster(X, k, random_state)
 
-        return _hdbscan_cluster(X)
+        labels, model = _hdbscan_cluster(X)
+
+        unique = np.unique(labels)
+
+        # 🔥 AUTO FAILSAFE
+        if len(unique) <= 1:
+            print("⚠️ HDBSCAN found no clusters → auto fallback to GMM")
+            return _gmm_cluster(X, k, random_state)
+
+        return labels, model
 
     elif method == "gmm":
         return _gmm_cluster(X, k, random_state)
@@ -47,31 +49,41 @@ def cluster(
 
 
 # =====================================
-# HDBSCAN (AUTO REGIME DETECTOR)
+# HDBSCAN (FIXED)
 # =====================================
 
 def _hdbscan_cluster(X):
 
+    n = len(X)
+
+    # 🔥 adaptive sizing (VERY IMPORTANT)
+    min_cluster_size = max(10, int(n * 0.01))   # 1% data
+    min_samples = max(3, int(min_cluster_size * 0.25))
+
+    print(f"HDBSCAN params → min_cluster_size={min_cluster_size}, min_samples={min_samples}")
+
     model = hdbscan.HDBSCAN(
-        min_cluster_size=80,     # tweak later
-        min_samples=20,
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
         metric='euclidean',
         cluster_selection_method='eom'
     )
 
     labels = model.fit_predict(X)
 
+    print("Clusters found:", np.unique(labels))
+
     return labels, model
 
 
 # =====================================
-# GAUSSIAN MIXTURE
+# GAUSSIAN MIXTURE (SAFE)
 # =====================================
 
 def _gmm_cluster(X, k, random_state):
 
     model = GaussianMixture(
-        n_components=k,
+        n_components=min(k, max(2, len(X)//500)),
         covariance_type='full',
         random_state=random_state,
         n_init=5
@@ -79,14 +91,18 @@ def _gmm_cluster(X, k, random_state):
 
     labels = model.fit_predict(X)
 
+    print("GMM clusters:", np.unique(labels))
+
     return labels, model
 
 
 # =====================================
-# KMEANS (SAFE FALLBACK)
+# KMEANS
 # =====================================
 
 def _kmeans_cluster(X, k, random_state):
+
+    k = min(k, max(2, len(X)//500))
 
     model = KMeans(
         n_clusters=k,
@@ -96,37 +112,6 @@ def _kmeans_cluster(X, k, random_state):
 
     labels = model.fit_predict(X)
 
+    print("KMeans clusters:", np.unique(labels))
+
     return labels, model
-
-
-# =====================================
-# SELF TEST
-# =====================================
-
-if __name__ == "__main__":
-
-    print("CLUSTERING ENGINE SELF TEST")
-
-    import numpy as np
-
-    # fake regimes
-    np.random.seed(42)
-
-    cluster1 = np.random.normal(0, 1, (500, 5))
-    cluster2 = np.random.normal(5, 1, (500, 5))
-    cluster3 = np.random.normal(-4, 1, (500, 5))
-
-    X = np.vstack([cluster1, cluster2, cluster3])
-
-    labels, model = cluster(X, method="hdbscan")
-
-    unique = np.unique(labels)
-
-    print("Clusters detected:", unique)
-    print("Cluster count:", len(unique))
-
-    noise = np.sum(labels == -1)
-    print("Noise points:", noise)
-
-    print("✅ PASSED")
-
