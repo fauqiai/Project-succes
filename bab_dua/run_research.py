@@ -14,7 +14,7 @@ def main():
 
     print("\n🔥 STEP 1 — RUNNING RESEARCH\n")
 
-    df = pd.read_csv("xauusd_2025_m30.csv")
+    df = pd.read_csv("xauusd_2025_h1.csv")
 
     df.columns = df.columns.str.lower().str.strip()
     df = df[["open","high","low","close"]].dropna()
