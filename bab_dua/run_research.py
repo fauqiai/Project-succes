@@ -47,26 +47,48 @@ def main():
     print(edge_table.head(10))
 
 
-    # =====================
-    # 🔥 VISUAL CLUSTER (ADDED ONLY)
-    # =====================
+    # ====================================================
+    # 🔥🔥 ULTRA CLEAR VISUAL (NO LOGIC TOUCHED)
+    # ====================================================
 
     top_cluster = edge_table["edge"].idxmax()
 
     mask = state["cluster"] == top_cluster
+    cluster_idx = df.index[mask]
 
-    plt.figure(figsize=(16,6))
-    plt.plot(df["close"])
-    plt.scatter(df.index[mask], df["close"][mask], s=10)
+    if len(cluster_idx) > 0:
 
-    plt.title(f"Highest Edge Cluster = {top_cluster}")
-    plt.xlabel("Index")
-    plt.ylabel("Price")
+        start = max(0, cluster_idx[0] - 200)
+        end   = min(len(df), cluster_idx[-1] + 200)
 
-    plt.savefig("top_cluster.png")
-    plt.close()
+        zoom_df = df.iloc[start:end]
+        zoom_mask = mask.iloc[start:end]
 
-    print("✅ Saved chart → top_cluster.png")
+        plt.figure(figsize=(24,10), dpi=200)
+
+        plt.plot(
+            zoom_df["close"],
+            linewidth=2
+        )
+
+        plt.scatter(
+            zoom_df.index[zoom_mask],
+            zoom_df["close"][zoom_mask],
+            s=40
+        )
+
+        plt.title(
+            f"Highest Edge Cluster (Zoomed) = {top_cluster}",
+            fontsize=18
+        )
+
+        plt.savefig("top_cluster_zoom.png", dpi=300)
+        plt.close()
+
+        print("✅ Saved ULTRA CLEAR chart → top_cluster_zoom.png")
+
+    else:
+        print("⚠️ No candles found for top cluster.")
 
 
     # =====================
