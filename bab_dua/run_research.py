@@ -17,6 +17,18 @@ def main():
     df = pd.read_csv("xauusd_m1_cleaned.csv")
 
     df.columns = df.columns.str.lower().str.strip()
+
+    # 🔥 AUTO detect kolom waktu (TIDAK ubah logic lain)
+    time_col = None
+    for col in ["time", "date", "datetime", "timestamp"]:
+        if col in df.columns:
+            time_col = col
+            break
+
+    if time_col is not None:
+        df[time_col] = pd.to_datetime(df[time_col])
+        df.set_index(time_col, inplace=True)
+
     df = df[["open","high","low","close"]].dropna()
 
     print("Rows:", len(df))
@@ -49,7 +61,7 @@ def main():
 
 
     # ====================================================
-    # 🔥🔥 QUANT-GRADE CANDLE VISUAL (ADDED ONLY)
+    # 🔥 QUANT CANDLE VISUAL (FIXED TIME INDEX)
     # ====================================================
 
     top_cluster = edge_table["edge"].idxmax()
@@ -59,25 +71,15 @@ def main():
 
     if len(cluster_indices) > 0:
 
-        center = cluster_indices[len(cluster_indices)//2]
+        center = len(cluster_indices)//2
+        center_time = cluster_indices[center]
 
-        start = max(0, center - 150)
-        end   = min(len(df), center + 150)
+        zoom_df = df.loc[
+            center_time - pd.Timedelta(hours=12):
+            center_time + pd.Timedelta(hours=12)
+        ].copy()
 
-        zoom_df = df.iloc[start:end].copy()
-        zoom_mask = mask.iloc[start:end]
-
-        # mplfinance butuh datetime index
-        zoom_df["date"] = pd.date_range(
-            start="2024-01-01",
-            periods=len(zoom_df),
-            freq="T"
-        )
-
-        zoom_df.set_index("date", inplace=True)
-
-        # cari zona cluster
-        cluster_dates = zoom_df.index[zoom_mask]
+        zoom_mask = mask.loc[zoom_df.index]
 
         fig, axlist = mpf.plot(
             zoom_df,
@@ -90,8 +92,8 @@ def main():
         ax = axlist[0]
 
         # garis tipis zona cluster
-        for d in cluster_dates:
-            ax.axvline(d, linewidth=0.5, alpha=0.35)
+        for t in zoom_df.index[zoom_mask]:
+            ax.axvline(t, linewidth=0.5, alpha=0.35)
 
         fig.savefig("top_cluster_candle.png", dpi=300)
         plt.close(fig)
