@@ -48,51 +48,63 @@ def main():
 
 
     # ====================================================
-    # 🔥🔥 ULTRA CLEAR VISUAL (NO LOGIC TOUCHED)
+    # 🔥 PRO VISUAL (ADDED ONLY — NO LOGIC TOUCHED)
     # ====================================================
 
     top_cluster = edge_table["edge"].idxmax()
 
     mask = state["cluster"] == top_cluster
-    cluster_idx = df.index[mask]
+    cluster_indices = df.index[mask]
 
-    if len(cluster_idx) > 0:
+    if len(cluster_indices) > 0:
 
-        start = max(0, cluster_idx[0] - 200)
-        end   = min(len(df), cluster_idx[-1] + 200)
+        # ambil sekitar 1 hari (±150 candle kiri-kanan)
+        center = cluster_indices[len(cluster_indices)//2]
+
+        start = max(0, center - 150)
+        end   = min(len(df), center + 150)
 
         zoom_df = df.iloc[start:end]
         zoom_mask = mask.iloc[start:end]
 
         plt.figure(figsize=(24,10), dpi=200)
 
-        plt.plot(
-            zoom_df["close"],
-            linewidth=2
-        )
+        # harga
+        plt.plot(zoom_df["close"], linewidth=2)
 
+        # titik cluster (dibesarkan biar jelas)
         plt.scatter(
             zoom_df.index[zoom_mask],
             zoom_df["close"][zoom_mask],
-            s=40
+            s=80
         )
 
+        # garis awal akhir cluster
+        first = cluster_indices[0]
+        last  = cluster_indices[-1]
+
+        if start < first < end:
+            plt.axvline(first, linestyle="--")
+
+        if start < last < end:
+            plt.axvline(last, linestyle="--")
+
         plt.title(
-            f"Highest Edge Cluster (Zoomed) = {top_cluster}",
+            f"Highest Edge Cluster — 1 Day Zoom (Cluster {top_cluster})",
             fontsize=18
         )
 
-        plt.savefig("top_cluster_zoom.png", dpi=300)
+        plt.savefig("top_cluster_day.png", dpi=300)
         plt.close()
 
-        print("✅ Saved ULTRA CLEAR chart → top_cluster_zoom.png")
+        print("✅ Saved PRO chart → top_cluster_day.png")
 
     else:
         print("⚠️ No candles found for top cluster.")
 
 
     # =====================
-    # SAVE (IMPORTANT)
+    # SAVE
     # =====================
 
     with open("research_output.pkl", "wb") as f:
