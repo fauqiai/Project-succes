@@ -1,7 +1,6 @@
-# run_research.py
-
 import pandas as pd
 import pickle
+import matplotlib.pyplot as plt
 
 from core.feature_engine import build_feature_matrix
 from core.regime_engine import build_regime_matrix
@@ -46,6 +45,29 @@ def main():
 
     print("\n🔥 TOP STATES:")
     print(edge_table.head(10))
+
+
+    # =====================
+    # 🔥 VISUAL CLUSTER (ADDED ONLY)
+    # =====================
+
+    top_cluster = edge_table["edge"].idxmax()
+
+    mask = state["cluster"] == top_cluster
+
+    plt.figure(figsize=(16,6))
+    plt.plot(df["close"])
+    plt.scatter(df.index[mask], df["close"][mask], s=10)
+
+    plt.title(f"Highest Edge Cluster = {top_cluster}")
+    plt.xlabel("Index")
+    plt.ylabel("Price")
+
+    plt.savefig("top_cluster.png")
+    plt.close()
+
+    print("✅ Saved chart → top_cluster.png")
+
 
     # =====================
     # SAVE (IMPORTANT)
