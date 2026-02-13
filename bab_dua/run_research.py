@@ -15,21 +15,16 @@ def main():
     print("\n🔥 STEP 1 — RUNNING RESEARCH\n")
 
     df = pd.read_csv("xauusd_m1_cleaned.csv")
-
     df.columns = df.columns.str.lower().str.strip()
 
-    # 🔥 AUTO detect kolom waktu (TIDAK ubah logic lain)
-    time_col = None
+    # Jika ada kolom waktu → jadikan index
     for col in ["time", "date", "datetime", "timestamp"]:
         if col in df.columns:
-            time_col = col
+            df[col] = pd.to_datetime(df[col])
+            df.set_index(col, inplace=True)
             break
 
-    if time_col is not None:
-        df[time_col] = pd.to_datetime(df[time_col])
-        df.set_index(time_col, inplace=True)
-
-    df = df[["open","high","low","close"]].dropna()
+    df = df[["open", "high", "low", "close"]].dropna()
 
     print("Rows:", len(df))
 
@@ -59,50 +54,50 @@ def main():
     print("\n🔥 TOP STATES:")
     print(edge_table.head(10))
 
-
     # ====================================================
-    # 🔥 QUANT CANDLE VISUAL (FIXED TIME INDEX)
+    # 🔥 STABLE CANDLE VISUAL (INDEX BASED ZOOM)
     # ====================================================
 
     top_cluster = edge_table["edge"].idxmax()
 
     mask = state["cluster"] == top_cluster
-    cluster_indices = df.index[mask]
+    cluster_positions = mask[mask].index
 
-    if len(cluster_indices) > 0:
+    if len(cluster_positions) > 0:
 
-        center = len(cluster_indices)//2
-        center_time = cluster_indices[center]
+        # Ambil posisi tengah cluster
+        mid_pos = len(cluster_positions) // 2
+        mid_index = df.index.get_loc(cluster_positions[mid_pos])
 
-        zoom_df = df.loc[
-            center_time - pd.Timedelta(hours=12):
-            center_time + pd.Timedelta(hours=12)
-        ].copy()
+        # Zoom 200 candle kiri-kanan (aman semua timeframe)
+        start = max(0, mid_index - 200)
+        end   = min(len(df), mid_index + 200)
 
-        zoom_mask = mask.loc[zoom_df.index]
+        zoom_df = df.iloc[start:end].copy()
+        zoom_mask = mask.iloc[start:end]
 
         fig, axlist = mpf.plot(
             zoom_df,
             type='candle',
             style='charles',
-            figsize=(24,10),
-            returnfig=True
+            figsize=(18,8),
+            returnfig=True,
+            warn_too_much_data=10000
         )
 
         ax = axlist[0]
 
-        # garis tipis zona cluster
+        # Garis tipis cluster
         for t in zoom_df.index[zoom_mask]:
-            ax.axvline(t, linewidth=0.5, alpha=0.35)
+            ax.axvline(t, linewidth=0.6, alpha=0.35)
 
-        fig.savefig("top_cluster_candle.png", dpi=300)
+        fig.savefig("top_cluster_candle.png", dpi=200)
         plt.close(fig)
 
-        print("✅ Saved QUANT candle chart → top_cluster_candle.png")
+        print("✅ Saved CLEAN candle chart → top_cluster_candle.png")
 
     else:
         print("⚠️ No candles found for top cluster.")
-
 
     # =====================
     # SAVE
