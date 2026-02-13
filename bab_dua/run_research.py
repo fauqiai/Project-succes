@@ -1,6 +1,7 @@
 import pandas as pd
 import pickle
 import matplotlib.pyplot as plt
+import mplfinance as mpf
 
 from core.feature_engine import build_feature_matrix
 from core.regime_engine import build_regime_matrix
@@ -48,7 +49,7 @@ def main():
 
 
     # ====================================================
-    # 🔥 PRO VISUAL (ADDED ONLY — NO LOGIC TOUCHED)
+    # 🔥🔥 QUANT-GRADE CANDLE VISUAL (ADDED ONLY)
     # ====================================================
 
     top_cluster = edge_table["edge"].idxmax()
@@ -58,46 +59,44 @@ def main():
 
     if len(cluster_indices) > 0:
 
-        # ambil sekitar 1 hari (±150 candle kiri-kanan)
         center = cluster_indices[len(cluster_indices)//2]
 
         start = max(0, center - 150)
         end   = min(len(df), center + 150)
 
-        zoom_df = df.iloc[start:end]
+        zoom_df = df.iloc[start:end].copy()
         zoom_mask = mask.iloc[start:end]
 
-        plt.figure(figsize=(24,10), dpi=200)
-
-        # harga
-        plt.plot(zoom_df["close"], linewidth=2)
-
-        # titik cluster (dibesarkan biar jelas)
-        plt.scatter(
-            zoom_df.index[zoom_mask],
-            zoom_df["close"][zoom_mask],
-            s=80
+        # mplfinance butuh datetime index
+        zoom_df["date"] = pd.date_range(
+            start="2024-01-01",
+            periods=len(zoom_df),
+            freq="T"
         )
 
-        # garis awal akhir cluster
-        first = cluster_indices[0]
-        last  = cluster_indices[-1]
+        zoom_df.set_index("date", inplace=True)
 
-        if start < first < end:
-            plt.axvline(first, linestyle="--")
+        # cari zona cluster
+        cluster_dates = zoom_df.index[zoom_mask]
 
-        if start < last < end:
-            plt.axvline(last, linestyle="--")
-
-        plt.title(
-            f"Highest Edge Cluster — 1 Day Zoom (Cluster {top_cluster})",
-            fontsize=18
+        fig, axlist = mpf.plot(
+            zoom_df,
+            type='candle',
+            style='charles',
+            figsize=(24,10),
+            returnfig=True
         )
 
-        plt.savefig("top_cluster_day.png", dpi=300)
-        plt.close()
+        ax = axlist[0]
 
-        print("✅ Saved PRO chart → top_cluster_day.png")
+        # garis tipis zona cluster
+        for d in cluster_dates:
+            ax.axvline(d, linewidth=0.5, alpha=0.35)
+
+        fig.savefig("top_cluster_candle.png", dpi=300)
+        plt.close(fig)
+
+        print("✅ Saved QUANT candle chart → top_cluster_candle.png")
 
     else:
         print("⚠️ No candles found for top cluster.")
