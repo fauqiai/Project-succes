@@ -1,7 +1,5 @@
 import pandas as pd
 import pickle
-import matplotlib.pyplot as plt
-import mplfinance as mpf
 
 from core.feature_engine import build_feature_matrix
 from core.regime_engine import build_regime_matrix
@@ -17,7 +15,7 @@ def main():
     df = pd.read_csv("xauusd_m1_cleaned.csv")
     df.columns = df.columns.str.lower().str.strip()
 
-    # AUTO detect kolom waktu (tidak ubah logic research)
+    # AUTO detect kolom waktu (tidak ubah logic lain)
     time_col = None
     for col in ["time", "date", "datetime", "timestamp"]:
         if col in df.columns:
@@ -34,7 +32,7 @@ def main():
     print("Rows:", len(df))
 
     # =====================
-    # BUILD STATE  (ASLI)
+    # BUILD STATE (ASLI)
     # =====================
 
     features = build_feature_matrix(df)
@@ -50,7 +48,7 @@ def main():
 
     state, model = cluster_states(state, scaled)
 
-    # pastikan align index (visual safety only)
+    # align index untuk keamanan output saja (tidak ubah logic)
     state = state.loc[df.index]
 
     # =====================
@@ -62,75 +60,31 @@ def main():
     print("\n🔥 TOP STATES:")
     print(edge_table.head(10))
 
-    # ====================================================
-    # 🔥 STABLE CANDLE VISUAL (WINDOW FIXED SIZE)
-    # ====================================================
+    # =====================
+    # 🔥 EXPORT CSV (BARU - VISUAL / MT5)
+    # =====================
 
-    if len(edge_table) > 0:
+    # ---- state per candle ----
+    state_export = state.copy()
 
-        top_cluster = edge_table["edge"].idxmax()
+    # pastikan ada kolom cluster
+    if "cluster" not in state_export.columns:
+        raise ValueError("Column 'cluster' not found in state output.")
 
-        mask = state["cluster"] == top_cluster
-        cluster_times = state.index[mask]
+    state_export = state_export[["cluster"]].copy()
+    state_export.index.name = "time"
+    state_export.to_csv("state_per_candle.csv")
 
-        if len(cluster_times) > 0:
+    print("✅ Saved → state_per_candle.csv")
 
-            # ambil kemunculan tengah cluster terbaik
-            mid_time = cluster_times[len(cluster_times)//2]
+    # ---- edge table ----
+    edge_export = edge_table.copy()
+    edge_export.to_csv("edge_table.csv")
 
-            # cari posisi index numerik
-            mid_pos = df.index.get_indexer([mid_time], method="nearest")[0]
-
-            # 🔥 WINDOW CANDLE TETAP (tidak tergantung jam trading)
-            WINDOW = 600   # kiri
-            WINDOW_RIGHT = 600   # kanan
-
-            start = max(0, mid_pos - WINDOW)
-            end   = min(len(df), mid_pos + WINDOW_RIGHT)
-
-            zoom_df = df.iloc[start:end].copy()
-            zoom_state = state.iloc[start:end]
-
-            # mask cluster di window ini
-            zoom_mask = zoom_state["cluster"] == top_cluster
-
-            if len(zoom_df) > 10:
-
-                fig, axlist = mpf.plot(
-                    zoom_df,
-                    type="candle",
-                    style="charles",
-                    figsize=(22,10),
-                    returnfig=True
-                )
-
-                ax = axlist[0]
-
-                # garis tipis transparan highlight cluster
-                highlight_times = zoom_df.index[zoom_mask]
-
-                for t in highlight_times:
-                    ax.axvline(t, linewidth=0.6, alpha=0.25)
-
-                ax.set_title(
-                    f"Top Cluster = {top_cluster} | Edge = {edge_table.loc[top_cluster,'edge']:.4f}\n"
-                    f"Candles shown = {len(zoom_df)}",
-                    fontsize=14
-                )
-
-                fig.savefig("top_cluster_candle.png", dpi=300, bbox_inches="tight")
-                plt.close(fig)
-
-                print("✅ Saved QUANT candle chart → top_cluster_candle.png")
-
-            else:
-                print("⚠️ Too few candles to plot.")
-
-        else:
-            print("⚠️ No candles found for top cluster.")
+    print("✅ Saved → edge_table.csv")
 
     # =====================
-    # SAVE (ASLI)
+    # SAVE PKL (ASLI)
     # =====================
 
     with open("research_output.pkl", "wb") as f:
