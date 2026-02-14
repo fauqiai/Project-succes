@@ -17,7 +17,7 @@ def main():
     df = pd.read_csv("xauusd_m1_cleaned.csv")
     df.columns = df.columns.str.lower().str.strip()
 
-    # AUTO detect time column
+    # 🔥 AUTO detect kolom waktu (TIDAK ubah logic lain)
     time_col = None
     for col in ["time", "date", "datetime", "timestamp"]:
         if col in df.columns:
@@ -28,7 +28,8 @@ def main():
         df[time_col] = pd.to_datetime(df[time_col])
         df.set_index(time_col, inplace=True)
 
-    df = df[["open","high","low","close"]].dropna()
+    df = df[["open", "high", "low", "close"]].dropna()
+    df = df.sort_index()
 
     print("Rows:", len(df))
 
@@ -49,6 +50,9 @@ def main():
 
     state, model = cluster_states(state, scaled)
 
+    # 🔥 pastikan index state align dengan df (VISUAL ONLY, tidak ubah logic)
+    state = state.loc[df.index]
+
     # =====================
     # EDGE
     # =====================
@@ -58,52 +62,67 @@ def main():
     print("\n🔥 TOP STATES:")
     print(edge_table.head(10))
 
-    # =====================
-    # 🔥 VISUAL 1 HARI SAJA
-    # =====================
+    # ====================================================
+    # 🔥 QUANT CANDLE VISUAL (1 FULL DAY, CLEAN ALIGNMENT)
+    # ====================================================
 
-    top_cluster = edge_table["edge"].idxmax()
+    if len(edge_table) > 0:
 
-    mask = state["cluster"] == top_cluster
-    cluster_times = df.index[mask]
+        # cluster dengan edge tertinggi
+        top_cluster = edge_table["edge"].idxmax()
 
-    if len(cluster_times) > 0:
+        mask = state["cluster"] == top_cluster
+        cluster_times = state.index[mask]
 
-        # ambil hari pertama dari cluster tertinggi
-        first_time = cluster_times[0]
-        day_start = first_time.normalize()
-        day_end = day_start + pd.Timedelta(days=1)
+        if len(cluster_times) > 0:
 
-        day_df = df.loc[day_start:day_end].copy()
-        day_mask = mask.loc[day_df.index]
+            # ambil tanggal dari kemunculan tengah cluster
+            mid_time = cluster_times[len(cluster_times)//2]
+            day_start = mid_time.normalize()
+            day_end = day_start + pd.Timedelta(days=1)
 
-        if len(day_df) > 0:
+            # ambil 1 hari penuh
+            zoom_df = df.loc[day_start:day_end].copy()
 
-            fig, axlist = mpf.plot(
-                day_df,
-                type='candle',
-                style='charles',
-                figsize=(14,7),
-                returnfig=True,
-                warn_too_much_data=10000
-            )
+            if len(zoom_df) > 0:
 
-            ax = axlist[0]
+                # mask khusus area zoom (align aman)
+                zoom_state = state.loc[zoom_df.index]
+                zoom_mask = zoom_state["cluster"] == top_cluster
 
-            # garis tipis untuk cluster
-            for t in day_df.index[day_mask]:
-                ax.axvline(t, color='blue', linewidth=0.6, alpha=0.4)
+                fig, axlist = mpf.plot(
+                    zoom_df,
+                    type="candle",
+                    style="charles",
+                    figsize=(22, 10),
+                    returnfig=True
+                )
 
-            fig.savefig("top_cluster_candle.png", dpi=200)
-            plt.close(fig)
+                ax = axlist[0]
 
-            print("✅ Saved 1-day cluster chart → top_cluster_candle.png")
+                # garis tipis transparan untuk cluster occurrence
+                highlight_times = zoom_df.index[zoom_mask]
+
+                for t in highlight_times:
+                    ax.axvline(t, linewidth=0.6, alpha=0.25)
+
+                # judul informatif (visual only)
+                ax.set_title(
+                    f"Top Cluster = {top_cluster} | Edge = {edge_table.loc[top_cluster,'edge']:.4f}\n"
+                    f"Date = {day_start.date()}",
+                    fontsize=14
+                )
+
+                fig.savefig("top_cluster_candle.png", dpi=300, bbox_inches="tight")
+                plt.close(fig)
+
+                print("✅ Saved QUANT candle chart → top_cluster_candle.png")
+
+            else:
+                print("⚠️ Zoom day has no candles.")
 
         else:
-            print("⚠️ No data for that day.")
-
-    else:
-        print("⚠️ No candles found for top cluster.")
+            print("⚠️ No candles found for top cluster.")
 
     # =====================
     # SAVE
