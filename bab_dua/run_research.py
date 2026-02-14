@@ -1,110 +1,123 @@
 import pandas as pd
-import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import mplfinance as mpf
-from clustering_engine import run_clustering
-from state_engine import analyze_states
+
+from core.feature_engine import build_feature_matrix
+from core.regime_engine import build_regime_matrix
+from core.interaction_engine import build_interactions
+from core.state_engine import build_state_matrix, cluster_states
+from core.expectancy_engine import state_edge
 
 
-def run_research():
+def main():
 
-    print("🔎 STEP 1 - RUNNING RESEARCH")
+    print("\n🔥 STEP 1 — RUNNING RESEARCH\n")
 
-    # ===============================
-    # LOAD DATA
-    # ===============================
-    df = pd.read_csv("xauusd_m5.csv")
-    df.columns = df.columns.str.lower()
+    df = pd.read_csv("xauusd_m1_cleaned.csv")
+    df.columns = df.columns.str.lower().str.strip()
 
-    if "time" in df.columns:
-        df["time"] = pd.to_datetime(df["time"])
-        df.set_index("time", inplace=True)
+    # AUTO detect time column
+    time_col = None
+    for col in ["time", "date", "datetime", "timestamp"]:
+        if col in df.columns:
+            time_col = col
+            break
 
-    print(f"Rows: {len(df)}")
+    if time_col is not None:
+        df[time_col] = pd.to_datetime(df[time_col])
+        df.set_index(time_col, inplace=True)
 
-    # ===============================
-    # CLUSTERING (ASLI - TIDAK DIUBAH)
-    # ===============================
-    cluster_labels, features = run_clustering(df)
+    df = df[["open","high","low","close"]].dropna()
 
-    df["cluster"] = cluster_labels
+    print("Rows:", len(df))
 
-    # ===============================
-    # STATE ANALYSIS (ASLI - TIDAK DIUBAH)
-    # ===============================
-    report = analyze_states(df)
+    # =====================
+    # BUILD STATE
+    # =====================
 
-    print("\n📊 TOP STATES:")
-    print(report.head(10))
+    features = build_feature_matrix(df)
+    regimes = build_regime_matrix(df)
 
-    # ===============================
-    # SAVE RESEARCH OUTPUT
-    # ===============================
+    interactions = build_interactions(features)
+    features = pd.concat([features, interactions], axis=1)
+
+    state, scaled, scaler, dim_model, discovery_model = build_state_matrix(
+        features,
+        regimes
+    )
+
+    state, model = cluster_states(state, scaled)
+
+    # =====================
+    # EDGE
+    # =====================
+
+    edge_table = state_edge(df, state)
+
+    print("\n🔥 TOP STATES:")
+    print(edge_table.head(10))
+
+    # =====================
+    # 🔥 VISUAL 1 HARI SAJA
+    # =====================
+
+    top_cluster = edge_table["edge"].idxmax()
+
+    mask = state["cluster"] == top_cluster
+    cluster_times = df.index[mask]
+
+    if len(cluster_times) > 0:
+
+        # ambil hari pertama dari cluster tertinggi
+        first_time = cluster_times[0]
+        day_start = first_time.normalize()
+        day_end = day_start + pd.Timedelta(days=1)
+
+        day_df = df.loc[day_start:day_end].copy()
+        day_mask = mask.loc[day_df.index]
+
+        if len(day_df) > 0:
+
+            fig, axlist = mpf.plot(
+                day_df,
+                type='candle',
+                style='charles',
+                figsize=(14,7),
+                returnfig=True,
+                warn_too_much_data=10000
+            )
+
+            ax = axlist[0]
+
+            # garis tipis untuk cluster
+            for t in day_df.index[day_mask]:
+                ax.axvline(t, color='blue', linewidth=0.6, alpha=0.4)
+
+            fig.savefig("top_cluster_candle.png", dpi=200)
+            plt.close(fig)
+
+            print("✅ Saved 1-day cluster chart → top_cluster_candle.png")
+
+        else:
+            print("⚠️ No data for that day.")
+
+    else:
+        print("⚠️ No candles found for top cluster.")
+
+    # =====================
+    # SAVE
+    # =====================
+
     with open("research_output.pkl", "wb") as f:
-        pickle.dump(report, f)
+        pickle.dump({
+            "df": df,
+            "state": state,
+            "edge_table": edge_table
+        }, f)
 
-    print("\n💾 Research saved -> research_output.pkl")
-
-    # =====================================================
-    # ================= VISUAL SECTION ====================
-    # =====================================================
-
-    try:
-        print("\n🎨 Generating TOP CLUSTER CANDLE VIEW...")
-
-        # ambil cluster edge tertinggi
-        top_cluster = report.sort_values("edge", ascending=False).index[0]
-
-        cluster_df = df[df["cluster"] == top_cluster]
-
-        if len(cluster_df) == 0:
-            print("No data in top cluster.")
-            return
-
-        # ambil 1 hari pertama dari cluster tsb
-        first_day = cluster_df.index.date[0]
-        day_data = df[df.index.date == first_day].copy()
-
-        if len(day_data) == 0:
-            print("No daily data found.")
-            return
-
-        # tandai cluster range di hari tsb
-        day_data["highlight"] = np.where(
-            day_data["cluster"] == top_cluster,
-            day_data["high"],
-            np.nan
-        )
-
-        # buat garis highlight tipis
-        apdict = mpf.make_addplot(
-            day_data["highlight"],
-            type='line',
-            width=0.7
-        )
-
-        # plot candle
-        mpf.plot(
-            day_data,
-            type='candle',
-            style='charles',
-            addplot=apdict,
-            volume=False,
-            figratio=(12,6),
-            figscale=1.5,
-            warn_too_much_data=10000,
-            title=f"Top Cluster {top_cluster} - {first_day}"
-        )
-
-        print("✅ Candle chart displayed.")
-
-    except Exception as e:
-        print("Visual error:", e)
+    print("\n✅ Research saved → research_output.pkl")
 
 
-# ===============================
-# MAIN
-# ===============================
 if __name__ == "__main__":
-    run_research()
+    main()
