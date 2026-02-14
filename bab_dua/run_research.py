@@ -17,7 +17,7 @@ def main():
     df = pd.read_csv("xauusd_m1_cleaned.csv")
     df.columns = df.columns.str.lower().str.strip()
 
-    # 🔥 AUTO detect kolom waktu (TIDAK ubah logic lain)
+    # AUTO detect kolom waktu (tidak ubah logic research)
     time_col = None
     for col in ["time", "date", "datetime", "timestamp"]:
         if col in df.columns:
@@ -28,13 +28,13 @@ def main():
         df[time_col] = pd.to_datetime(df[time_col])
         df.set_index(time_col, inplace=True)
 
-    df = df[["open", "high", "low", "close"]].dropna()
+    df = df[["open","high","low","close"]].dropna()
     df = df.sort_index()
 
     print("Rows:", len(df))
 
     # =====================
-    # BUILD STATE
+    # BUILD STATE  (ASLI)
     # =====================
 
     features = build_feature_matrix(df)
@@ -50,11 +50,11 @@ def main():
 
     state, model = cluster_states(state, scaled)
 
-    # 🔥 pastikan index state align dengan df (VISUAL ONLY, tidak ubah logic)
+    # pastikan align index (visual safety only)
     state = state.loc[df.index]
 
     # =====================
-    # EDGE
+    # EDGE (ASLI)
     # =====================
 
     edge_table = state_edge(df, state)
@@ -63,12 +63,11 @@ def main():
     print(edge_table.head(10))
 
     # ====================================================
-    # 🔥 QUANT CANDLE VISUAL (1 FULL DAY, CLEAN ALIGNMENT)
+    # 🔥 STABLE CANDLE VISUAL (WINDOW FIXED SIZE)
     # ====================================================
 
     if len(edge_table) > 0:
 
-        # cluster dengan edge tertinggi
         top_cluster = edge_table["edge"].idxmax()
 
         mask = state["cluster"] == top_cluster
@@ -76,40 +75,46 @@ def main():
 
         if len(cluster_times) > 0:
 
-            # ambil tanggal dari kemunculan tengah cluster
+            # ambil kemunculan tengah cluster terbaik
             mid_time = cluster_times[len(cluster_times)//2]
-            day_start = mid_time.normalize()
-            day_end = day_start + pd.Timedelta(days=1)
 
-            # ambil 1 hari penuh
-            zoom_df = df.loc[day_start:day_end].copy()
+            # cari posisi index numerik
+            mid_pos = df.index.get_indexer([mid_time], method="nearest")[0]
 
-            if len(zoom_df) > 0:
+            # 🔥 WINDOW CANDLE TETAP (tidak tergantung jam trading)
+            WINDOW = 600   # kiri
+            WINDOW_RIGHT = 600   # kanan
 
-                # mask khusus area zoom (align aman)
-                zoom_state = state.loc[zoom_df.index]
-                zoom_mask = zoom_state["cluster"] == top_cluster
+            start = max(0, mid_pos - WINDOW)
+            end   = min(len(df), mid_pos + WINDOW_RIGHT)
+
+            zoom_df = df.iloc[start:end].copy()
+            zoom_state = state.iloc[start:end]
+
+            # mask cluster di window ini
+            zoom_mask = zoom_state["cluster"] == top_cluster
+
+            if len(zoom_df) > 10:
 
                 fig, axlist = mpf.plot(
                     zoom_df,
                     type="candle",
                     style="charles",
-                    figsize=(22, 10),
+                    figsize=(22,10),
                     returnfig=True
                 )
 
                 ax = axlist[0]
 
-                # garis tipis transparan untuk cluster occurrence
+                # garis tipis transparan highlight cluster
                 highlight_times = zoom_df.index[zoom_mask]
 
                 for t in highlight_times:
                     ax.axvline(t, linewidth=0.6, alpha=0.25)
 
-                # judul informatif (visual only)
                 ax.set_title(
                     f"Top Cluster = {top_cluster} | Edge = {edge_table.loc[top_cluster,'edge']:.4f}\n"
-                    f"Date = {day_start.date()}",
+                    f"Candles shown = {len(zoom_df)}",
                     fontsize=14
                 )
 
@@ -119,13 +124,13 @@ def main():
                 print("✅ Saved QUANT candle chart → top_cluster_candle.png")
 
             else:
-                print("⚠️ Zoom day has no candles.")
+                print("⚠️ Too few candles to plot.")
 
         else:
             print("⚠️ No candles found for top cluster.")
 
     # =====================
-    # SAVE
+    # SAVE (ASLI)
     # =====================
 
     with open("research_output.pkl", "wb") as f:
