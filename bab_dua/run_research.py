@@ -1,117 +1,99 @@
 import pandas as pd
+import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 
-from core.feature_engine import build_feature_matrix
-from core.regime_engine import build_regime_matrix
-from core.interaction_engine import build_interactions
-from core.state_engine import build_state_matrix, cluster_states
-from core.expectancy_engine import state_edge
+from clustering_engine import run_clustering
+from state_engine import analyze_states
 
+# ===============================
+# LOAD DATA
+# ===============================
 
-def main():
+DATA_PATH = "xauusd_2025_m5.csv"
 
-    print("\n🔥 STEP 1 — RUNNING RESEARCH\n")
+df = pd.read_csv(DATA_PATH)
 
-    df = pd.read_csv("xauusd_m1_cleaned.csv")
-    df.columns = df.columns.str.lower().str.strip()
+df['time'] = pd.to_datetime(df['time'])
+df.set_index('time', inplace=True)
 
-    # Jika ada kolom waktu → jadikan index
-    for col in ["time", "date", "datetime", "timestamp"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col])
-            df.set_index(col, inplace=True)
-            break
+print("STEP 1 – RUNNING RESEARCH")
+print("Rows:", len(df))
 
-    df = df[["open", "high", "low", "close"]].dropna()
+# ===============================
+# RUN CLUSTERING (ASLI)
+# ===============================
 
-    print("Rows:", len(df))
+df, model_info = run_clustering(df)
 
-    # =====================
-    # BUILD STATE
-    # =====================
+# ===============================
+# ANALYZE STATES (ASLI)
+# ===============================
 
-    features = build_feature_matrix(df)
-    regimes = build_regime_matrix(df)
+top_states = analyze_states(df)
 
-    interactions = build_interactions(features)
-    features = pd.concat([features, interactions], axis=1)
+print("\nTOP STATES:")
+print(top_states)
 
-    state, scaled, scaler, dim_model, discovery_model = build_state_matrix(
-        features,
-        regimes
+# ===============================
+# SAVE RESEARCH OUTPUT (ASLI)
+# ===============================
+
+with open("research_output.pkl", "wb") as f:
+    pickle.dump({
+        "data": df,
+        "top_states": top_states,
+        "model_info": model_info
+    }, f)
+
+print("Research saved -> research_output.pkl")
+
+# ===============================
+# VISUALISASI CLUSTER TERBAIK
+# ===============================
+
+# Ambil cluster dengan edge tertinggi
+best_cluster = top_states.iloc[0].name
+print("\nBest cluster:", best_cluster)
+
+mask = df["cluster"] == best_cluster
+
+if mask.sum() > 0:
+
+    # Ambil candle tengah dari cluster
+    mid_index = df[mask].index[len(df[mask]) // 2]
+
+    # ===== ZOOM 1 FULL DAY =====
+    day_start = mid_index.normalize()
+    day_end = day_start + pd.Timedelta(days=1)
+
+    zoom_df = df.loc[day_start:day_end].copy()
+    zoom_mask = mask.loc[day_start:day_end]
+
+    # Pastikan kolom sesuai mplfinance
+    zoom_df = zoom_df[['open', 'high', 'low', 'close']]
+
+    # Buat garis vertikal tipis untuk cluster
+    vlines = zoom_df.index[zoom_mask]
+
+    # Plot candle
+    mpf.plot(
+        zoom_df,
+        type='candle',
+        style='charles',
+        title=f"Top Cluster {best_cluster} (1 Day Zoom)",
+        vlines=dict(
+            vlines=vlines,
+            colors='blue',
+            linewidths=0.5,
+            alpha=0.4
+        ),
+        warn_too_much_data=10000,
+        savefig="top_cluster_candle.png"
     )
 
-    state, model = cluster_states(state, scaled)
+    print("Saved QUANT candle chart -> top_cluster_candle.png")
 
-    # =====================
-    # EDGE
-    # =====================
-
-    edge_table = state_edge(df, state)
-
-    print("\n🔥 TOP STATES:")
-    print(edge_table.head(10))
-
-    # ====================================================
-    # 🔥 STABLE CANDLE VISUAL (INDEX BASED ZOOM)
-    # ====================================================
-
-    top_cluster = edge_table["edge"].idxmax()
-
-    mask = state["cluster"] == top_cluster
-    cluster_positions = mask[mask].index
-
-    if len(cluster_positions) > 0:
-
-        # Ambil posisi tengah cluster
-        mid_pos = len(cluster_positions) // 2
-        mid_index = df.index.get_loc(cluster_positions[mid_pos])
-
-        # Zoom 200 candle kiri-kanan (aman semua timeframe)
-        start = max(0, mid_index - 200)
-        end   = min(len(df), mid_index + 200)
-
-        zoom_df = df.iloc[start:end].copy()
-        zoom_mask = mask.iloc[start:end]
-
-        fig, axlist = mpf.plot(
-            zoom_df,
-            type='candle',
-            style='charles',
-            figsize=(18,8),
-            returnfig=True,
-            warn_too_much_data=10000
-        )
-
-        ax = axlist[0]
-
-        # Garis tipis cluster
-        for t in zoom_df.index[zoom_mask]:
-            ax.axvline(t, linewidth=0.6, alpha=0.35)
-
-        fig.savefig("top_cluster_candle.png", dpi=200)
-        plt.close(fig)
-
-        print("✅ Saved CLEAN candle chart → top_cluster_candle.png")
-
-    else:
-        print("⚠️ No candles found for top cluster.")
-
-    # =====================
-    # SAVE
-    # =====================
-
-    with open("research_output.pkl", "wb") as f:
-        pickle.dump({
-            "df": df,
-            "state": state,
-            "edge_table": edge_table
-        }, f)
-
-    print("\n✅ Research saved → research_output.pkl")
-
-
-if __name__ == "__main__":
-    main()
+else:
+    print("No data found for best cluster.")
