@@ -49,16 +49,22 @@ def cluster(
 
 
 # =====================================
-# HDBSCAN (FIXED)
+# HDBSCAN (ADAPTIVE - QUANT SAFE)
 # =====================================
 
 def _hdbscan_cluster(X):
 
+    import numpy as np
+    import hdbscan
+
     n = len(X)
 
-    # 🔥 adaptive sizing (VERY IMPORTANT)
-    min_cluster_size = max(10, int(n * 0.01))   # 1% data
-    min_samples = max(3, int(min_cluster_size * 0.25))
+    # 🔥 ukuran cluster realistis untuk time series M1
+    # sekitar 0.3% dari data (tidak terlalu ketat, tidak terlalu longgar)
+    min_cluster_size = max(20, int(n * 0.003))
+
+    # samples lebih kecil agar density bisa terbentuk
+    min_samples = max(5, int(min_cluster_size * 0.2))
 
     print(f"HDBSCAN params → min_cluster_size={min_cluster_size}, min_samples={min_samples}")
 
@@ -66,7 +72,8 @@ def _hdbscan_cluster(X):
         min_cluster_size=min_cluster_size,
         min_samples=min_samples,
         metric='euclidean',
-        cluster_selection_method='eom'
+        cluster_selection_method='eom',
+        prediction_data=True
     )
 
     labels = model.fit_predict(X)
