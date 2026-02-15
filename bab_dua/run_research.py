@@ -1,6 +1,8 @@
 import pandas as pd
 import pickle
 
+from sklearn.metrics import silhouette_score
+
 from core.feature_engine import build_feature_matrix
 from core.regime_engine import build_regime_matrix
 from core.interaction_engine import build_interactions
@@ -15,7 +17,7 @@ def main():
     df = pd.read_csv("xauusd_m1_cleaned.csv")
     df.columns = df.columns.str.lower().str.strip()
 
-    # AUTO detect kolom waktu (tidak ubah logic lain)
+    # AUTO detect kolom waktu
     time_col = None
     for col in ["time", "date", "datetime", "timestamp"]:
         if col in df.columns:
@@ -48,7 +50,7 @@ def main():
 
     state, model = cluster_states(state, scaled)
 
-    # align index untuk keamanan output saja (tidak ubah logic)
+    # align index untuk keamanan output saja
     state = state.loc[df.index]
 
     # =====================
@@ -61,26 +63,47 @@ def main():
     print(edge_table.head(10))
 
     # =====================
-    # 🔥 EXPORT CSV (BARU - VISUAL / MT5)
+    # 🔥 VALIDASI CLUSTER (BARU)
     # =====================
 
-    # ---- state per candle ----
-    state_export = state.copy()
+    print("\n🔎 CLUSTER QUALITY CHECK")
 
-    # pastikan ada kolom cluster
-    if "cluster" not in state_export.columns:
-        raise ValueError("Column 'cluster' not found in state output.")
+    # 1️⃣ Silhouette score
+    try:
+        sil = silhouette_score(scaled, state["cluster"])
+        print(f"Silhouette score: {sil:.4f}")
+    except Exception as e:
+        print("Silhouette score failed:", e)
 
-    state_export = state_export[["cluster"]].copy()
+    # 2️⃣ Distribusi cluster
+    print("\nCluster distribution:")
+    print(state["cluster"].value_counts(normalize=True).sort_index())
+
+    # 3️⃣ Edge stability split 50:50
+    mid = len(df)//2
+
+    df_a, df_b = df.iloc[:mid], df.iloc[mid:]
+    state_a, state_b = state.iloc[:mid], state.iloc[mid:]
+
+    edge_a = state_edge(df_a, state_a)
+    edge_b = state_edge(df_b, state_b)
+
+    print("\nTop cluster FIRST half:")
+    print(edge_a.sort_values("edge", ascending=False).head(3))
+
+    print("\nTop cluster SECOND half:")
+    print(edge_b.sort_values("edge", ascending=False).head(3))
+
+    # =====================
+    # 🔥 EXPORT CSV (MT5 / ANALISIS)
+    # =====================
+
+    state_export = state[["cluster"]].copy()
     state_export.index.name = "time"
     state_export.to_csv("state_per_candle.csv")
+    print("\n✅ Saved → state_per_candle.csv")
 
-    print("✅ Saved → state_per_candle.csv")
-
-    # ---- edge table ----
-    edge_export = edge_table.copy()
-    edge_export.to_csv("edge_table.csv")
-
+    edge_table.to_csv("edge_table.csv")
     print("✅ Saved → edge_table.csv")
 
     # =====================
