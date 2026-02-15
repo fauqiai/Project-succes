@@ -81,19 +81,20 @@ def _hdbscan_cluster(X):
 
 
 # =====================================
-# GMM AUTO-SELECT BEST CLUSTER COUNT
+# GMM AUTO-SELECT (MAX 6 CLUSTERS)
 # =====================================
 
 def _gmm_cluster(X, k, random_state):
 
     import numpy as np
+    from sklearn.mixture import GaussianMixture
 
     best_k = None
     best_bic = np.inf
     best_model = None
 
-    # test jumlah cluster dari 2 sampai 10
-    for n_components in range(2, 11):
+    # 🔥 hanya test 2 sampai 6 cluster (lebih realistis untuk market regime)
+    for n_components in range(2, 7):
 
         model = GaussianMixture(
             n_components=n_components,
