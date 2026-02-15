@@ -81,23 +81,44 @@ def _hdbscan_cluster(X):
 
 
 # =====================================
-# GAUSSIAN MIXTURE (SAFE)
+# GMM AUTO-SELECT BEST CLUSTER COUNT
 # =====================================
 
 def _gmm_cluster(X, k, random_state):
 
-    model = GaussianMixture(
-        n_components=min(k, max(2, len(X)//500)),
-        covariance_type='full',
-        random_state=random_state,
-        n_init=5
-    )
+    import numpy as np
 
-    labels = model.fit_predict(X)
+    best_k = None
+    best_bic = np.inf
+    best_model = None
+
+    # test jumlah cluster dari 2 sampai 10
+    for n_components in range(2, 11):
+
+        model = GaussianMixture(
+            n_components=n_components,
+            covariance_type='full',
+            random_state=random_state,
+            n_init=5
+        )
+
+        model.fit(X)
+        bic = model.bic(X)
+
+        print(f"GMM test k={n_components} → BIC={bic:.2f}")
+
+        if bic < best_bic:
+            best_bic = bic
+            best_k = n_components
+            best_model = model
+
+    print(f"\n✅ Best GMM clusters: {best_k}")
+
+    labels = best_model.predict(X)
 
     print("GMM clusters:", np.unique(labels))
 
-    return labels, model
+    return labels, best_model
 
 
 # =====================================
