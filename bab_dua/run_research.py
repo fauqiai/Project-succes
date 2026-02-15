@@ -94,14 +94,14 @@ def main():
     print("\nTop cluster SECOND half:")
     print(edge_b.sort_values("edge", ascending=False).head(3))
 
-    # =====================
-    # 🔥 SIMPLE TRADE SIMULATION PER CLUSTER
+        # =====================
+    # 🔥 TRADE SIMULATION PER CLUSTER (EXIT AFTER 5 CANDLES)
     # =====================
 
-    print("\n📊 TRADE SIMULATION PER CLUSTER")
+    print("\n📊 TRADE SIMULATION PER CLUSTER (5-CANDLE HORIZON)")
 
-    # return 1 candle ke depan (bisa ubah nanti ke 3,5,dll)
-    future_ret = df["close"].pct_change().shift(-1).fillna(0)
+    horizon = 5
+    future_ret = (df["close"].shift(-horizon) / df["close"] - 1).fillna(0)
 
     sim_df = pd.DataFrame({
         "cluster": state["cluster"],
@@ -121,7 +121,7 @@ def main():
 
         avg_ret = subset["ret"].mean()
 
-        # simple equity curve untuk DD
+        # equity curve untuk DD
         equity = (1 + subset["ret"]).cumprod()
         peak = equity.cummax()
         drawdown = (equity - peak) / peak
