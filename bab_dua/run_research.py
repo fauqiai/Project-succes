@@ -95,6 +95,45 @@ def main():
     print(edge_b.sort_values("edge", ascending=False).head(3))
 
     # =====================
+    # 🔥 SIMPLE TRADE SIMULATION PER CLUSTER
+    # =====================
+
+    print("\n📊 TRADE SIMULATION PER CLUSTER")
+
+    # return 1 candle ke depan (bisa ubah nanti ke 3,5,dll)
+    future_ret = df["close"].pct_change().shift(-1).fillna(0)
+
+    sim_df = pd.DataFrame({
+        "cluster": state["cluster"],
+        "ret": future_ret
+    })
+
+    for c in sorted(sim_df["cluster"].unique()):
+
+        subset = sim_df[sim_df["cluster"] == c]
+
+        if len(subset) < 20:
+            continue
+
+        wins = (subset["ret"] > 0).sum()
+        trades = len(subset)
+        winrate = wins / trades
+
+        avg_ret = subset["ret"].mean()
+
+        # simple equity curve untuk DD
+        equity = (1 + subset["ret"]).cumprod()
+        peak = equity.cummax()
+        drawdown = (equity - peak) / peak
+        max_dd = drawdown.min()
+
+        print(f"\nCluster {c}:")
+        print(f"Winrate {winrate*100:.1f}%")
+        print(f"Avg return {avg_ret:.6f}")
+        print(f"Max DD {max_dd:.6f}")
+        print(f"Trades {trades}")
+
+    # =====================
     # 🔥 EXPORT CSV (MT5 / ANALISIS)
     # =====================
 
