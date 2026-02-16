@@ -15,19 +15,10 @@ jobs:
 
     - name: Install deps
       run: |
+        pip install pandas numpy scikit-learn
         if [ -f requirements.txt ]; then
           pip install -r requirements.txt
         fi
 
-    - name: Auto run python file
-      run: |
-        FILE=$(ls run_*.py 2>/dev/null | head -n 1)
-        if [ -z "$FILE" ]; then
-          FILE=$(ls main.py 2>/dev/null | head -n 1)
-        fi
-        if [ -z "$FILE" ]; then
-          FILE=$(ls *.py | head -n 1)
-        fi
-        echo "Running $FILE"
-        python "$FILE"
-
+    - name: Run bot
+      run: python bab_dua/run_research.py
