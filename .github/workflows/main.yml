@@ -1,0 +1,33 @@
+name: Run Python Bot
+
+on: [push]
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install deps
+      run: |
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+
+    - name: Auto run python file
+      run: |
+        FILE=$(ls run_*.py 2>/dev/null | head -n 1)
+        if [ -z "$FILE" ]; then
+          FILE=$(ls main.py 2>/dev/null | head -n 1)
+        fi
+        if [ -z "$FILE" ]; then
+          FILE=$(ls *.py | head -n 1)
+        fi
+        echo "Running $FILE"
+        python "$FILE"
+
