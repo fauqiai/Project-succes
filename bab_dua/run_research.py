@@ -48,7 +48,12 @@ def main():
         regimes
     )
 
-    state, model = cluster_states(state, scaled)
+    state, model = cluster_states(
+    state,
+    scaled,
+    method="hmm",
+    k=2   # atau 3
+)
 
     # align index untuk keamanan output saja
     state = state.loc[df.index]
