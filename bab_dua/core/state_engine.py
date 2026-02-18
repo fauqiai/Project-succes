@@ -70,11 +70,16 @@ def cluster_states(
     k=8
 ):
 
-    labels, model = cluster(
-        scaled,
-        method=method,
-        k=k
-    )
+    if method == "hmm":
+        from .hmm_engine import hmm_cluster
+        labels, model = hmm_cluster(scaled, n_states=k)
+
+    else:
+        labels, model = cluster(
+            scaled,
+            method=method,
+            k=k
+        )
 
     state["cluster"] = labels
 
