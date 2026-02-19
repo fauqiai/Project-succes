@@ -8,24 +8,7 @@ def hmm_cluster(
     random_state=42
 ):
     """
-    Hidden Markov Model clustering.
-
-    Parameters
-    ----------
-    X : np.array
-        Scaled feature matrix (output state_engine)
-    n_states : int
-        Number of hidden states (start with 2 or 3)
-    covariance_type : str
-        "full", "diag", "tied", "spherical"
-    n_iter : int
-        Training iterations
-    random_state : int
-
-    Returns
-    -------
-    labels : np.array
-    model  : trained HMM model
+    Hidden Markov Model clustering with FULL REPORT
     """
 
     try:
@@ -36,7 +19,16 @@ def hmm_cluster(
             "pip install hmmlearn"
         )
 
-    # HMM model
+    print("\n==============================")
+    print("🧠 HMM TRAINING STARTED")
+    print("==============================")
+    print(f"Samples: {X.shape[0]}")
+    print(f"Features: {X.shape[1]}")
+    print(f"States requested: {n_states}")
+    print(f"Covariance: {covariance_type}")
+    print(f"Iterations: {n_iter}")
+
+    # build model
     model = GaussianHMM(
         n_components=n_states,
         covariance_type=covariance_type,
@@ -45,12 +37,28 @@ def hmm_cluster(
         verbose=False
     )
 
-    # fit model
+    # train
     model.fit(X)
 
-    # predict hidden states per candle
+    # predict states
     labels = model.predict(X)
 
-    print(f"HMM states found: {np.unique(labels)}")
+    print("\n✅ HMM TRAINED")
+
+    unique, counts = np.unique(labels, return_counts=True)
+
+    print("\n📊 STATE DISTRIBUTION:")
+    for u, c in zip(unique, counts):
+        print(f"State {u}: {c} candles ({c/len(labels)*100:.2f}%)")
+
+    print("\n📉 LOG LIKELIHOOD:", model.score(X))
+
+    print("\n🔢 TRANSITION MATRIX:")
+    print(model.transmat_)
+
+    print("\n📌 MEANS PER STATE:")
+    print(model.means_)
+
+    print("==============================\n")
 
     return labels, model
