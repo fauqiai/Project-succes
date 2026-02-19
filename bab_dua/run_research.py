@@ -14,7 +14,7 @@ def main():
 
     print("\n🔥 STEP 1 — RUNNING RESEARCH\n")
 
-    df = pd.read_csv("bab_dua/xauusd_m1_cleaned.csv")
+    df = pd.read_csv("xauusd_m1_cleaned.csv")
     df.columns = df.columns.str.lower().str.strip()
 
     # AUTO detect kolom waktu
