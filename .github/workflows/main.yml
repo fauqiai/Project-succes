@@ -22,3 +22,12 @@ jobs:
 
     - name: Run bot
       run: python bab_dua/run_research.py
+
+    - name: Upload outputs
+      uses: actions/upload-artifact@v4
+      with:
+        name: research-output
+        path: |
+          state_per_candle.csv
+          edge_table.csv
+          research_output.pkl
